@@ -72,3 +72,9 @@ It will handle subscription lifecycle events from Google Play Store and Apple Ap
   - **Query logging activation & deactivation**
 - **Ran tests to verify query logs appear when enabled:**
 
+## ✅ Step 10: Connected Local Project to GitHub & First Commit
+- **Initialized Git** in the project (`git init`).
+- **Created a GitHub repository**: `subsnotifpro-go`.
+- **Linked local repository to GitHub** using:
+  ```sh
+  git remote add origin https://github.com/your-username/subsnotifpro-go.git
