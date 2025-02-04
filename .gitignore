@@ -1,0 +1,9 @@
+bin/
+*.log
+.env
+.env.test
+.vscode/
+*.db
+dist/
+node_modules/
+bin/
