@@ -152,4 +152,4 @@ It will handle subscription lifecycle events from Google Play Store and Apple Ap
   - API responses correctly indicate success or failure.
   - All test cases passed (`go test ./tests/api_tests/...`).
 
-  ##### **Committed and pushed changes** to GitHub.
+  ##### **Committed and pushed changes** to GitHub. ([main 479d2f1] Added Google Play service account management: upload, validation API, and tests)
