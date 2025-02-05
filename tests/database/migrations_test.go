@@ -11,7 +11,7 @@ import (
 // TestAutoMigration checks if tables are created after auto-migration
 func TestAutoMigration(t *testing.T) {
 	// Ensure database is connected
-	SetupTestDatabase()
+	database.SetupTestDatabase()
 
 	// Apply auto-migrations
 	fmt.Println("🔹 Running auto-migrations...")

@@ -10,7 +10,7 @@ import (
 // TestQueryLogging verifies that queries are logged when enabled
 func TestQueryLogging(t *testing.T) {
 	// Ensure database is connected
-	SetupTestDatabase()
+	database.SetupTestDatabase()
 
 	fmt.Println("🔹 Running test query...")
 

@@ -1,4 +1,4 @@
-# SubsNotifPro Go Backend
+# 📌 SubsNotifPro Go Backend **Project Log**
 
 ## Internal Developer Guide
 
@@ -8,7 +8,7 @@ It will handle subscription lifecycle events from Google Play Store and Apple Ap
 
 ### Development Progress
 
-#### ✅ Step 1: Project Setup
+#### ✅ Step 1: Project Setup (04-02-2025)
 - Created the project folder `subsnotifpro-go`
 - Initialized Go module (`go mod init subsnotifpro-go`)
 
@@ -72,9 +72,84 @@ It will handle subscription lifecycle events from Google Play Store and Apple Ap
   - **Query logging activation & deactivation**
 - **Ran tests to verify query logs appear when enabled:**
 
-## ✅ Step 10: Connected Local Project to GitHub & First Commit
+#### ✅ Step 10: Connected Local Project to GitHub & First Commit
 - **Initialized Git** in the project (`git init`).
 - **Created a GitHub repository**: `subsnotifpro-go`.
 - **Linked local repository to GitHub** using:
   ```sh
-  git remote add origin https://github.com/your-username/subsnotifpro-go.git
+  git remote add origin https://github.com/lotusquants/subsnotifpro-go.git
+
+### ✅ **Today's Plan (05-02-2025)**
+- Work 1 - implement support for **Google Play Service Account Management** as it is critical for integrating with Google Play API. This involves:
+
+1. **Create a Database Table** (`google_play_service_accounts`) for storing service account metadata.
+2. **Auto-Migrate the Table** when the server starts.
+3. **Implement API to Upload & Store Service Account JSON** securely in `/secrets/` directory.
+4. **Implement API to Validate the Service Account JSON** by making a test call to Google Play API.
+5. **Implement API to Fetch Validation Status** of the stored service account.
+6. **Implement API to Delete the Existing Service Account** (file & metadata).
+7. **Set up Background Job** to periodically check if the service account is still valid.
+8. **Update Project Log & Commit Changes**.
+
+
+#### ✅ **Step 11: Added Database Table for Google Play Service Accounts**
+- **Created `google_play_service_accounts` table** to store service account metadata.
+- **Fields Included:**
+  - `id` (Primary Key)
+  - `file_path` (Location of uploaded JSON file)
+  - `client_email` (Extracted from JSON for quick reference)
+  - `valid_status` (Boolean: Whether the account is valid)
+  - `last_validated_at` (Timestamp: Last successful validation)
+  - `created_at` & `updated_at`
+- **Auto-Migration Enabled** to create this table on startup.
+- **Tested Table Creation** by checking schema in PostgreSQL:
+  ```sh
+  psql -U postgres -d subsnotifpro_db -c "\d google_play_service_accounts"
+
+#### ✅ **Step 12: Created API for Uploading Google Play Service Account**
+- **Developed API** to upload Google Play service account JSON files to the server.
+- **Endpoint**: `/api/google-play/upload-service-account`.
+- The API allows users to upload the service account file, stores it in the `secrets/google_play/` directory, and saves metadata (file name, file path, etc.) in the database.
+- **Created Test** for the upload service account API to verify its functionality.
+- The test simulates a file upload and checks if:
+  - The file is saved correctly in the `secrets/google_play/` directory.
+  - The metadata (file name, file path, validated status) is saved in the `google_play_service_accounts` table.
+- **Ran the Test** and confirmed that the API works as expected:
+  - The file is uploaded successfully.
+  - The metadata is stored correctly in the database.
+- **Tested the API** manually and automatically.
+- **Verified** that:
+  - The uploaded file is stored in the correct directory.
+  - The database contains the expected metadata for the service account.
+- **Confirmed Success**:
+  - The API returned the expected response.
+  - The database was updated with the correct information.
+
+#### ✅ **Step 13: Added API and Tests for Validating Google Play Service Account**
+  ##### **1️⃣ Implemented Service Account Validation API**
+  - **Created API endpoint:** `GET /api/google-play/validate-service-account`
+  - **Purpose:** Validates the stored Google Play service account JSON file by:
+    - Ensuring the file exists.
+    - Checking the required fields (`type`, `project_id`, `private_key_id`, `private_key`, `client_email`).
+    - Attempting an API call to Google Play’s `Monetization.Subscriptions.List` to verify permissions.
+  - **Implemented JSON structure validation** to ensure correct service account format.
+
+  ##### **2️⃣ Test Cases for Service Account Validation**
+  - **Tested scenarios:**
+    - ✅ Valid JSON file passes validation.
+    - ❌ Missing required fields result in an error.
+    - ❌ Invalid file format is rejected.
+    - ❌ If API call fails, validation fails.
+    - **Implemented test in `tests/api_tests/validate_google_play_service_account.go`** to automatically verify validation functionality.
+
+  ##### **3️⃣ Best Practice for Managing Service Account Files**
+  - Only **one** active service account JSON file is stored at a time.
+  - **Previous files are deleted** upon new uploads.
+  - Ensures that validation always runs on the **latest uploaded** service account.
+
+  ##### **4️⃣ Verified API and Test Execution**
+  - Successfully validated a **real** Google Play service account JSON.
+  - API responses correctly indicate success or failure.
+  - All test cases passed (`go test ./tests/api_tests/...`).
+
+  ##### **Committed and pushed changes** to GitHub.

@@ -6,8 +6,6 @@ import (
 
 	"path/filepath"
 
-	"subsnotifpro-go/database"
-
 	"github.com/joho/godotenv"
 )
 
@@ -28,5 +26,5 @@ func SetupTestDatabase() {
 
 	// Connect to database
 	fmt.Println("🔹 Connecting to test database...")
-	database.ConnectDatabase()
+	ConnectDatabase()
 }

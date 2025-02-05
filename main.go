@@ -5,29 +5,23 @@ import (
 	"log"
 	"subsnotifpro-go/config"
 	"subsnotifpro-go/database"
-
-	"github.com/gin-gonic/gin"
+	"subsnotifpro-go/routes"
 )
 
 func main() {
 	// Load configuration
 	cfg := config.LoadConfig()
 
-	// Connect to the database (MAKE SURE THIS IS PRESENT)
+	// Connect to the database
 	database.ConnectDatabase()
 
 	// Run Auto-Migrations
 	database.AutoMigrateTables()
 
-	// Initialize Gin router
-	router := gin.Default()
+	// Initialize router
+	router := routes.SetupRouter()
 
-	// Health check route
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "OK", "message": "SubsNotifPro backend is running!"})
-	})
-
-	// Start the server with configured port
-	log.Printf("Starting server on port %s...\n", cfg.ServerPort)
+	// Start the server with the configured port
+	log.Printf("🚀 Starting server on port %s...\n", cfg.ServerPort)
 	router.Run(fmt.Sprintf(":%s", cfg.ServerPort))
 }
