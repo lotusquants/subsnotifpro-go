@@ -153,3 +153,38 @@ It will handle subscription lifecycle events from Google Play Store and Apple Ap
   - All test cases passed (`go test ./tests/api_tests/...`).
 
   ##### **Committed and pushed changes** to GitHub. ([main 479d2f1] Added Google Play service account management: upload, validation API, and tests)
+
+
+#### ✅ **Step 14 : Today's Work Summary(06-02-2025)**
+1. **Implemented Google Play Service Account Management APIs**
+   - Added APIs to:
+     - Upload service account JSON file.
+     - Validate the service account using Google Play API.
+     - Retrieve service account status.
+     - Delete the service account.
+   - Ensured proper database updates for validation status.
+   - Implemented structured error handling and logging.
+
+2. **Added Package Name Management APIs**
+   - APIs to **set, update, delete, and retrieve** the package name.
+   - Implemented database update logic:
+     - If settings entry exists, update the package name.
+     - If not, create a new settings entry.
+
+3. **Refactored Code for Clean Architecture**
+   - Separated **handlers, services, repositories, and validators** into different files.
+   - Moved all database interactions to repository layer.
+   - Ensured better error handling and logging.
+
+4. **Fixed File Overwriting Issue**
+   - Added a **UUID suffix** to service account filenames to prevent overwriting when re-uploading.
+   - Ensured old files are deleted before saving new ones.
+
+5. **Fixed Validation and Retrieval Issues**
+   - Ensured `service-account-status` API checks for an existing service account before returning details.
+   - Updated logic to prevent returning `404` for valid cases.
+
+6. **Commit Details**
+   - **Commit Hash**: `[ADD_LATEST_COMMIT_HASH_HERE]`
+   - **Commit Message**: `"Implemented Google Play service account & package name management APIs with clean architecture refactor"`
+

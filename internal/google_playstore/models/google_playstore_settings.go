@@ -6,6 +6,16 @@ import (
 	"gorm.io/gorm"
 )
 
+// GooglePlaySettings stores package name and reference to the latest service account
+type GooglePlaySettings struct {
+	ID                     uint                     `gorm:"primaryKey" json:"id"`
+	PackageName            string                   `gorm:"type:varchar(255);unique;not null" json:"package_name"`
+	LatestServiceAccountID string                   `gorm:"type:uuid;index" json:"latest_account_id"` // Store as UUID
+	LatestServiceAccount   GooglePlayServiceAccount `gorm:"foreignKey:LatestServiceAccountID;references:ID" json:"latest_account"`
+	CreatedAt              time.Time                `json:"created_at"`
+	UpdatedAt              time.Time                `json:"updated_at"`
+}
+
 // GooglePlayServiceAccount represents the stored service account JSON metadata
 type GooglePlayServiceAccount struct {
 	ID          string         `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`

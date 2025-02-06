@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"subsnotifpro-go/internal/google_play"
+	playstoresettings "subsnotifpro-go/internal/google_playstore/google_playstore_settings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,8 +18,15 @@ func SetupRouter() *gin.Engine {
 	// Google Play Service Account Routes
 	googlePlayGroup := router.Group("/api/google-play")
 	{
-		googlePlayGroup.POST("/upload-service-account", google_play.UploadServiceAccountHandler)
-		googlePlayGroup.GET("/validate-service-account", google_play.ValidateServiceAccountHandler)
+		// Service Account Management
+		googlePlayGroup.POST("/upload-service-account", playstoresettings.UploadServiceAccountHandler)
+		googlePlayGroup.GET("/validate-service-account", playstoresettings.ValidateServiceAccountHandler)
+		googlePlayGroup.GET("/service-account-status", playstoresettings.GetServiceAccountStatusHandler)
+		googlePlayGroup.DELETE("/delete-service-account", playstoresettings.DeleteServiceAccountHandler)
+
+		// Package Name Management
+		googlePlayGroup.POST("/set-package-name", playstoresettings.SetPackageNameHandler)
+		googlePlayGroup.GET("/get-package-name", playstoresettings.GetPackageNameHandler)
 	}
 
 	return router
