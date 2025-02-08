@@ -99,3 +99,15 @@ func AutoMigrateTables() {
 	}
 	log.Println("✅ Auto-migration for test models completed successfully!")
 }
+
+func CloseDatabase() {
+	sqlDB, err := DB.DB()
+	if err != nil {
+		log.Println("❌ Error getting raw DB instance:", err)
+		return
+	}
+
+	log.Println("🚦 Closing database connection...")
+	sqlDB.Close()
+	log.Println("✅ Database connection closed")
+}

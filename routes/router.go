@@ -2,6 +2,7 @@ package routes
 
 import (
 	playstoresettings "subsnotifpro-go/internal/google_playstore/google_playstore_settings"
+	"subsnotifpro-go/internal/google_playstore/rtdn"
 
 	"github.com/gin-gonic/gin"
 )
@@ -27,6 +28,9 @@ func SetupRouter() *gin.Engine {
 		// Package Name Management
 		googlePlayGroup.POST("/set-package-name", playstoresettings.SetPackageNameHandler)
 		googlePlayGroup.GET("/get-package-name", playstoresettings.GetPackageNameHandler)
+
+		googlePlayGroup.GET("/rtdn/dlq/size", rtdn.GetDLQSize)       // API to check RTDN Dead Letter Queue size
+		googlePlayGroup.GET("/rtdn/dlq/retry", rtdn.RetryDLQHandler) // API to check RTDN Dead Letter Queue size
 	}
 
 	return router

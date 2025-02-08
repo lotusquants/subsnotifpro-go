@@ -7,6 +7,9 @@ import (
 // Collect all models in a list for AutoMigrate
 var AllModels = []interface{}{
 	&TestModel{},
-	&models.GooglePlayServiceAccount{}, // Include models from internal/google_play/models
+
+	// Include models from internal/google_playstore/models
+	&models.GooglePlayServiceAccount{},
 	&models.GooglePlaySettings{},
+	&models.GooglePlayWebhookEvent{},
 }

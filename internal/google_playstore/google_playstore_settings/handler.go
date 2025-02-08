@@ -15,6 +15,7 @@ func UploadServiceAccountHandler(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
 		log.Println("❌ Error retrieving file:", err)
+
 		c.JSON(http.StatusBadRequest, gin.H{"error": "File is required"})
 		return
 	}
