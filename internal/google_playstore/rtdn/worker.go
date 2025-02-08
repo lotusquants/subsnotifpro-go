@@ -15,7 +15,7 @@ import (
 
 // ProcessPendingEvents processes pending webhook events with retry logic
 func ProcessPendingEvents(ctx context.Context, batchSize int) {
-	ticker := time.NewTicker(time.Second * constants.RetryDelay)
+	ticker := time.NewTicker(time.Second * constants.EventProcessingInterval)
 	defer ticker.Stop() // ✅ Stop ticker when function exits
 
 	log.Println("🚀 Started pending event processing...")

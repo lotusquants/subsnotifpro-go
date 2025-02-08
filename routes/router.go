@@ -5,10 +5,11 @@ import (
 	"subsnotifpro-go/internal/google_playstore/rtdn"
 
 	"github.com/gin-gonic/gin"
+	"github.com/streadway/amqp"
 )
 
 // SetupRouter initializes and returns a Gin router with grouped routes
-func SetupRouter() *gin.Engine {
+func SetupRouter(ch *amqp.Channel) *gin.Engine {
 	router := gin.Default()
 
 	// Health check route
@@ -29,8 +30,11 @@ func SetupRouter() *gin.Engine {
 		googlePlayGroup.POST("/set-package-name", playstoresettings.SetPackageNameHandler)
 		googlePlayGroup.GET("/get-package-name", playstoresettings.GetPackageNameHandler)
 
-		googlePlayGroup.GET("/rtdn/dlq/size", rtdn.GetDLQSize)       // API to check RTDN Dead Letter Queue size
-		googlePlayGroup.GET("/rtdn/dlq/retry", rtdn.RetryDLQHandler) // API to check RTDN Dead Letter Queue size
+		googlePlayGroup.POST("/recieve-rtdn", func(c *gin.Context) {
+			rtdn.WebhookHandler(c, ch) // Pass the channel here
+		})
+		googlePlayGroup.GET("/rtdn/dlq/size", rtdn.GetDLQSize) // API to check RTDN Dead Letter Queue size
+		googlePlayGroup.GET("/rtdn/dlq/retry", rtdn.RetryDLQHandler)
 	}
 
 	return router

@@ -94,3 +94,11 @@ const (
 	DLQCheckIntervalMedium = 60     // 1 minute (60s)
 	DLQCheckIntervalHigh   = 30     // 30 seconds
 )
+
+const (
+	// Interval for processing pending events (seconds)
+	EventProcessingInterval = 60
+
+	// Max batch size for processing events
+	EventBatchSize = 100
+)

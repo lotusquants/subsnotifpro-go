@@ -1,7 +1,9 @@
-// internal/google_playstore/models/google_playstore_webhook_event.go
 package models
 
 import (
+	"encoding/json"
+	"errors"
+	"strconv"
 	"time"
 
 	"gorm.io/gorm"
@@ -27,29 +29,47 @@ type GooglePlayWebhookEvent struct {
 
 // SubscriptionNotification contains subscription-specific details
 type SubscriptionNotification struct {
-	Version          string `gorm:"type:varchar(10)"`
-	NotificationType int    `gorm:"not null"`
-	PurchaseToken    string `gorm:"type:varchar(255);not null"`
-	SubscriptionID   string `gorm:"type:varchar(255);not null"`
+	Version          string `json:"version,omitempty" gorm:"default:null"`
+	NotificationType int    `json:"notificationType,omitempty" gorm:"default:null"` // Nullable
+	PurchaseToken    string `json:"purchaseToken,omitempty" gorm:"default:null"`
+	SubscriptionID   string `json:"subscriptionId,omitempty" gorm:"default:null"`
 }
 
 // OneTimeProductNotification contains one-time purchase details
 type OneTimeProductNotification struct {
-	Version          string `gorm:"type:varchar(10)"`
-	NotificationType int    `gorm:"not null"`
-	PurchaseToken    string `gorm:"type:varchar(255);not null"`
-	Sku              string `gorm:"type:varchar(255);not null"`
+	Version          string `json:"version,omitempty" gorm:"default:null"`
+	NotificationType int    `json:"notificationType,omitempty" gorm:"default:null"` // Nullable
+	PurchaseToken    string `json:"purchaseToken,omitempty" gorm:"default:null"`
+	Sku              string `json:"sku,omitempty" gorm:"default:null"`
 }
 
 // VoidedPurchaseNotification contains voided purchase details
 type VoidedPurchaseNotification struct {
-	PurchaseToken string `gorm:"type:varchar(255);not null"`
-	OrderID       string `gorm:"type:varchar(255);not null"`
-	ProductType   int    `gorm:"not null"` // 1 = Subscription, 2 = One-time purchase
-	RefundType    int    `gorm:"not null"` // 1 = Full refund, 2 = Partial refund
+	PurchaseToken string `json:"purchaseToken,omitempty" gorm:"default:null"`
+	OrderID       string `json:"orderId,omitempty" gorm:"default:null"`
+	ProductType   int    `json:"productType,omitempty" gorm:"default:null"` // Nullable
+	RefundType    int    `json:"refundType,omitempty" gorm:"default:null"`
 }
 
 // TestNotification represents a test notification from Google Play Console
 type TestNotification struct {
-	Version string `gorm:"type:varchar(10)"`
+	Version string `json:"version,omitempty" gorm:"default:null"`
+}
+
+// ConvertFields handles type conversions after unmarshalling
+func (e *GooglePlayWebhookEvent) ConvertFields() error {
+	if e.EventTimeMillis == 0 {
+		return nil // Already converted, no need to process
+	}
+
+	// If event time is received as a string, convert it
+	var eventTimeStr string
+	if err := json.Unmarshal([]byte(e.RawPayload), &eventTimeStr); err == nil {
+		eventTimeInt, err := strconv.ParseInt(eventTimeStr, 10, 64)
+		if err != nil {
+			return errors.New("❌ Failed to convert eventTimeMillis to int64")
+		}
+		e.EventTimeMillis = eventTimeInt
+	}
+	return nil
 }

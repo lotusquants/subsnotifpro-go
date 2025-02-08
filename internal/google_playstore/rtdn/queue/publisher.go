@@ -2,29 +2,20 @@
 package queue
 
 import (
-	"context"
 	"encoding/json"
+	"fmt"
 	"subsnotifpro-go/internal/constants"
 	"subsnotifpro-go/internal/logger"
-	"subsnotifpro-go/internal/messaging"
 
 	"github.com/streadway/amqp"
 )
 
 // PublishToQueue sends webhook data to RabbitMQ for background processing
-func PublishToQueue(event interface{}) error {
-	// ✅ Get a shared RabbitMQ channel from messaging package
-
-	ch, err := messaging.GetChannel(context.Background()) // ✅ Ensure context is passed
-	if err != nil {
-		logger.Log.Error("❌ Failed to get RabbitMQ channel:", err)
-		return err
-	}
-
-	// ✅ Ensure that the channel is not nil before proceeding
+func PublishToQueue(event interface{}, ch *amqp.Channel) error {
+	// ✅ Ensure channel is not nil
 	if ch == nil {
 		logger.Log.Error("❌ RabbitMQ channel is nil")
-		return err
+		return fmt.Errorf("RabbitMQ channel is nil")
 	}
 
 	// ✅ Marshal the event data into JSON
@@ -33,6 +24,8 @@ func PublishToQueue(event interface{}) error {
 		logger.Log.Error("❌ Failed to marshal event:", err)
 		return err
 	}
+
+	logger.Log.Info("✅ Successfully marshaled event. Publishing to RabbitMQ...")
 
 	// ✅ Publish the message to the queue
 	err = ch.Publish(
@@ -48,6 +41,6 @@ func PublishToQueue(event interface{}) error {
 		return err
 	}
 
-	logger.Log.Info("✅ Webhook event published to queue:", event)
+	logger.Log.Info("✅ Webhook event published to RabbitMQ queue:", event)
 	return nil
 }

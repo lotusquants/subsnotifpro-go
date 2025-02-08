@@ -3,10 +3,13 @@ package rtdn
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"log"
 	"net/http"
-	"os"
 
 	"subsnotifpro-go/internal/constants"
+	"subsnotifpro-go/internal/google_playstore/models"
 	"subsnotifpro-go/internal/google_playstore/rtdn/queue"
 	"subsnotifpro-go/internal/google_playstore/rtdn/service"
 	"subsnotifpro-go/internal/google_playstore/rtdn/validator"
@@ -17,49 +20,103 @@ import (
 	"github.com/streadway/amqp"
 )
 
-// WebhookHandler receives and stores Google Play events
-func WebhookHandler(c *gin.Context) {
+// WebhookHandler handles both wrapped and unwrapped RTDN messages
+func WebhookHandler(c *gin.Context, ch *amqp.Channel) {
 
-	// ✅ Extract and validate JWT
-	authHeader := c.GetHeader("Authorization")
-	expectedAudience := os.Getenv("GOOGLE_PLAY_PROJECT_ID")
+	// // ✅ Extract and validate JWT
+	// authHeader := c.GetHeader("Authorization")
+	// expectedAudience := os.Getenv("GOOGLE_PLAY_PROJECT_ID")
 
-	if _, err := validator.ValidateJWT(authHeader, expectedAudience); err != nil {
-		logger.Log.Warnf("❌ Unauthorized RTDN request received: %v", err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized webhook"})
+	// if _, err := validator.ValidateJWT(authHeader, expectedAudience); err != nil {
+	// 	logger.Log.Warnf("❌ Unauthorized RTDN request received: %v", err)
+	// 	c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized webhook"})
+	// 	return
+	// }
+
+	// ✅ Read the raw request body
+	rawBody, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		logger.Log.Error("❌ Failed to read request body:", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
-	// ✅ Parse incoming JSON request
-	var requestPayload struct {
+	// ✅ Detect wrapped or unwrapped message
+	var pubsubPayload struct {
 		Message struct {
 			Data string `json:"data"`
 		} `json:"message"`
 	}
 
-	// ✅ Bind JSON request into requestPayload
-	if err := c.ShouldBindJSON(&requestPayload); err != nil {
-		logger.Log.Errorf("❌ Invalid webhook JSON format: %v", err)
+	if err := json.Unmarshal(rawBody, &pubsubPayload); err == nil && pubsubPayload.Message.Data != "" {
+		// ✅ Case 1: Wrapped Pub/Sub message
+		log.Println("🔄 Detected wrapped RTDN Pub/Sub message.")
+
+		// ✅ Decode the Base64-encoded message data
+		event, err := validator.DecodeRTDNMessage(pubsubPayload.Message.Data)
+		if err != nil {
+			logger.Log.Errorf("❌ Failed to decode RTDN message: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid RTDN message"})
+			return
+		}
+
+		processEvent(c, event, ch)
+		return
+	}
+
+	// ✅ Case 2: Unwrapped Pub/Sub message (raw JSON)
+	log.Println("🔄 Detected unwrapped RTDN message.")
+
+	// ✅ Decode unwrapped message
+	var tempPayload map[string]interface{}
+	if err := json.Unmarshal(rawBody, &tempPayload); err != nil {
+		logger.Log.Errorf("❌ Invalid unwrapped RTDN JSON format: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
 		return
 	}
 
-	// ✅ Handle empty payload before decoding
-	if requestPayload.Message.Data == "" {
-		logger.Log.Warn("⚠️ Empty RTDN payload received")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Empty RTDN payload"})
-		return
-	}
-
-	// ✅ Decode the base64-encoded RTDN message
-	event, err := validator.DecodeRTDNMessage(requestPayload.Message.Data)
+	// ✅ Convert `eventTimeMillis` safely to int64
+	eventTimeInt, err := validator.ParseEventTimeMillis(tempPayload["eventTimeMillis"])
 	if err != nil {
-		logger.Log.Errorf("❌ Failed to decode RTDN message: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid RTDN message"})
+		logger.Log.Errorf("❌ Failed to convert eventTimeMillis: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid eventTimeMillis format"})
 		return
 	}
 
-	// ✅ Validate webhook payload before storing
+	// ✅ Convert temp map to event struct
+	rawJSON, _ := json.Marshal(tempPayload)
+	event := models.GooglePlayWebhookEvent{
+		Version:         validator.SafeString(tempPayload["version"]),
+		PackageName:     validator.SafeString(tempPayload["packageName"]),
+		EventTimeMillis: eventTimeInt,
+		RawPayload:      string(rawJSON),
+		Status:          "pending",
+		RetryCount:      0,
+	}
+
+	// ✅ Extract notification type (Only one should be present)
+	if subNotification, exists := tempPayload["subscriptionNotification"]; exists {
+		event.SubscriptionNotification = validator.SafeUnmarshal[models.SubscriptionNotification](subNotification)
+	}
+
+	if oneTimeNotification, exists := tempPayload["oneTimeProductNotification"]; exists {
+		event.OneTimeProductNotification = validator.SafeUnmarshal[models.OneTimeProductNotification](oneTimeNotification)
+	}
+
+	if voidedNotification, exists := tempPayload["voidedPurchaseNotification"]; exists {
+		event.VoidedPurchaseNotification = validator.SafeUnmarshal[models.VoidedPurchaseNotification](voidedNotification)
+	}
+
+	if testNotification, exists := tempPayload["testNotification"]; exists {
+		event.TestNotification = validator.SafeUnmarshal[models.TestNotification](testNotification)
+	}
+
+	processEvent(c, event, ch)
+}
+
+// processEvent validates, stores, and queues the event
+func processEvent(c *gin.Context, event models.GooglePlayWebhookEvent, ch *amqp.Channel) {
+	// ✅ Validate webhook payload
 	if err := validator.ValidateWebhookPayload(&event); err != nil {
 		logger.Log.Errorf("❌ Invalid RTDN payload: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -74,7 +131,7 @@ func WebhookHandler(c *gin.Context) {
 	}
 
 	// ✅ Push event to RabbitMQ for processing
-	if err := queue.PublishToQueue(event); err != nil {
+	if err := queue.PublishToQueue(event, ch); err != nil {
 		logger.Log.Errorf("❌ RabbitMQ error: Failed to queue event: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to queue event"})
 		return

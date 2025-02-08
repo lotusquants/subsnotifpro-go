@@ -31,9 +31,21 @@ var eventHandlers = map[int]EventHandlerFunc{
 	constants.SUBSCRIPTION_PENDING_PURCHASE_CANCELED: repository.HandlePendingPurchaseCanceled,
 }
 
+// One-Time Product Event Handlers
+var oneTimeProductHandlers = map[int]EventHandlerFunc{
+	constants.ONE_TIME_PRODUCT_PURCHASED: repository.SaveOneTimePurchase,
+	constants.ONE_TIME_PRODUCT_CANCELED:  repository.HandleOneTimePurchaseCanceled,
+}
+
+// Voided Purchase Event Handlers
+var voidedPurchaseHandlers = map[int]EventHandlerFunc{
+	constants.PRODUCT_TYPE_SUBSCRIPTION: repository.HandleVoidedSubscription,
+	constants.PRODUCT_TYPE_ONE_TIME:     repository.HandleVoidedOneTimePurchase,
+}
+
 // SaveWebhookEvent processes and stores Google Play RTDN webhook events
 func SaveWebhookEvent(event *models.GooglePlayWebhookEvent) error {
-	log.Println("📩 Storing Google Play webhook event:", event.PackageName)
+	log.Println("📩 Storing Google Play webhook event:", event.ID)
 
 	// Pass event to repository layer
 	return repository.SaveWebhookEvent(event)
@@ -51,10 +63,10 @@ func ProcessWebhookEvent(event models.GooglePlayWebhookEvent) error {
 	} else if event.VoidedPurchaseNotification != nil {
 		err = handleVoidedPurchaseEvent(event)
 	} else if event.TestNotification != nil {
-		log.Println("🟢 Test notification received:", event.PackageName)
+		log.Println("🟢 Test notification received:", event.ID)
 		return nil
 	} else {
-		log.Println("⚠️ Unrecognized RTDN event type:", event.PackageName)
+		log.Println("⚠️ Unrecognized RTDN event type:", event.ID)
 		return nil
 	}
 
@@ -93,7 +105,7 @@ func handleSubscriptionEvent(event models.GooglePlayWebhookEvent) error {
 	return nil
 }
 
-// handleOneTimePurchaseEvent processes one-time product purchase RTDN events
+// handleOneTimePurchaseEvent routes one-time purchase events
 func handleOneTimePurchaseEvent(event models.GooglePlayWebhookEvent) error {
 	notification := event.OneTimeProductNotification
 	eventType, exists := constants.OneTimeProductNotificationTypes[notification.NotificationType]
@@ -103,20 +115,18 @@ func handleOneTimePurchaseEvent(event models.GooglePlayWebhookEvent) error {
 		return nil
 	}
 
-	log.Printf("📢 Processing One-Time Purchase Event: %s", eventType)
+	log.Printf("📢 Processing One-Time Purchase Event: %s for SKU: %s", eventType, notification.Sku)
 
-	// Example handling (expand as needed)
-	switch notification.NotificationType {
-	case constants.ONE_TIME_PRODUCT_PURCHASED:
-		log.Printf("🛒 One-time product purchased: %s", notification.Sku)
-	case constants.ONE_TIME_PRODUCT_CANCELED:
-		log.Printf("❌ One-time product purchase canceled: %s", notification.Sku)
+	// Route event to appropriate handler
+	if handler, found := oneTimeProductHandlers[notification.NotificationType]; found {
+		return handler(event)
 	}
 
+	log.Printf("⚠️ No handler defined for one-time product event type: %d", notification.NotificationType)
 	return nil
 }
 
-// handleVoidedPurchaseEvent processes voided purchase RTDN events
+// handleVoidedPurchaseEvent routes voided purchase events
 func handleVoidedPurchaseEvent(event models.GooglePlayWebhookEvent) error {
 	notification := event.VoidedPurchaseNotification
 	eventType, exists := constants.VoidedPurchaseNotificationTypes[notification.ProductType]
@@ -126,8 +136,13 @@ func handleVoidedPurchaseEvent(event models.GooglePlayWebhookEvent) error {
 		return nil
 	}
 
-	log.Printf("🚫 Voided purchase: Order ID: %s, Product Type: %s, Refund Type: %d",
-		notification.OrderID, eventType, notification.RefundType)
+	log.Printf("🚫 Processing Voided Purchase Event: %s for Order ID: %s", eventType, notification.OrderID)
 
+	// Route event to appropriate handler
+	if handler, found := voidedPurchaseHandlers[notification.ProductType]; found {
+		return handler(event)
+	}
+
+	log.Printf("⚠️ No handler defined for voided purchase event type: %d", notification.ProductType)
 	return nil
 }

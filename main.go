@@ -13,10 +13,7 @@ import (
 
 	"subsnotifpro-go/config"
 	"subsnotifpro-go/database"
-	"subsnotifpro-go/internal/google_playstore/rtdn"
-	"subsnotifpro-go/internal/google_playstore/rtdn/queue"
 	"subsnotifpro-go/internal/messaging"
-	"subsnotifpro-go/internal/metrics"
 	"subsnotifpro-go/routes"
 )
 
@@ -29,19 +26,16 @@ func main() {
 	cfg := config.LoadConfig()
 
 	// ✅ Initialize database
-	database.ConnectDatabase()
-	database.AutoMigrateTables()
+	database.ConnectDatabase()   // Initialize the database
+	database.AutoMigrateTables() // Auto-migrate tables
 
-	// ✅ Get a **single** RabbitMQ Channel
+	// ✅ Get a **single** RabbitMQ Channel (initialized here)
 	ch, err := messaging.GetChannel(ctx)
 	if err != nil {
 		log.Fatal("❌ Failed to connect to RabbitMQ:", err)
 		return
 	}
-	defer func() {
-		log.Println("🚦 Closing RabbitMQ connection...")
-		_ = ch.Close()
-	}()
+	defer messaging.CloseRabbitMQ()
 
 	// ✅ Initialize RabbitMQ (Queues, Exchanges, Bindings)
 	messaging.InitializeRabbitMQ(ch)
@@ -53,33 +47,8 @@ func main() {
 		messaging.MonitorRabbitMQConnection(ctx)
 	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		metrics.StartMetricsServer(ctx)
-	}()
-
-	// ✅ Start Queue Consumers with a shared channel
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		queue.StartQueueConsumer(ctx, ch)
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		queue.StartDLQConsumer(ctx, ch)
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		rtdn.ProcessPendingEvents(ctx, 10)
-	}()
-
 	// ✅ Setup HTTP server
-	router := routes.SetupRouter()
+	router := routes.SetupRouter(ch)
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%s", cfg.ServerPort),
 		Handler: router,
@@ -115,7 +84,7 @@ func main() {
 	// ✅ Wait for all goroutines to finish
 	wg.Wait()
 
-	// // ✅ Close database
+	// ✅ Close database
 	database.CloseDatabase()
 
 	// ✅ Cleanup RabbitMQ resources

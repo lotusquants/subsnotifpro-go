@@ -2,8 +2,10 @@ package api_tests
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +14,7 @@ import (
 
 	"subsnotifpro-go/database"
 	playstoresettings "subsnotifpro-go/internal/google_playstore/google_playstore_settings"
+	"subsnotifpro-go/internal/messaging"
 	"subsnotifpro-go/routes"
 
 	"github.com/gin-gonic/gin"
@@ -25,9 +28,22 @@ func TestMain(m *testing.M) {
 
 	// Ensure database is connected
 	database.SetupTestDatabase()
+	// ✅ Get a **single** RabbitMQ Channel
+	ch, err := messaging.GetChannel(context.Background())
+	if err != nil {
+		log.Fatal("❌ Failed to connect to RabbitMQ:", err)
+		return
+	}
+	defer func() {
+		log.Println("🚦 Closing RabbitMQ connection...")
+		_ = ch.Close()
+	}()
+
+	// ✅ Initialize RabbitMQ (Queues, Exchanges, Bindings)
+	messaging.InitializeRabbitMQ(ch)
 
 	gin.SetMode(gin.TestMode)
-	testRouter = routes.SetupRouter() // Ensure you call your setup router function
+	testRouter = routes.SetupRouter(ch) // Ensure you call your setup router function
 	os.Exit(m.Run())
 }
 

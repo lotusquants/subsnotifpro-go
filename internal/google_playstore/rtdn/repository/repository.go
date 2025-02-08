@@ -7,6 +7,7 @@ import (
 	"log"
 	"subsnotifpro-go/database"
 	"subsnotifpro-go/internal/google_playstore/models"
+	"subsnotifpro-go/internal/logger"
 
 	"gorm.io/gorm"
 )
@@ -41,9 +42,13 @@ func GetPendingEvents(ctx context.Context, limit int) ([]models.GooglePlayWebhoo
 	return events, tx.Commit().Error // ✅ Commit if successful
 }
 
-// UpdateWebhookStatus updates the processing status of a webhook event
 func UpdateWebhookStatus(eventID string, status string) error {
+	logger.Log.Infof("Updating status for event %s to %s", eventID, status)
 	result := database.DB.Model(&models.GooglePlayWebhookEvent{}).Where("id = ?", eventID).Update("status", status)
+	if result.Error != nil {
+		logger.Log.Errorf("Error while updating status: %v", result.Error)
+		return result.Error
+	}
 	if result.RowsAffected == 0 {
 		return errors.New("event not found")
 	}
@@ -144,5 +149,61 @@ func HandleSubscriptionExpired(event models.GooglePlayWebhookEvent) error {
 // HandlePendingPurchaseCanceled processes pending purchase cancellation events
 func HandlePendingPurchaseCanceled(event models.GooglePlayWebhookEvent) error {
 	log.Println("❌ [Placeholder] Handling pending purchase cancellation:", event.SubscriptionNotification.SubscriptionID)
+	return nil
+}
+
+// SaveOneTimePurchase handles successful one-time purchases
+func SaveOneTimePurchase(event models.GooglePlayWebhookEvent) error {
+	log.Println("✅ [One-Time Purchase] Saving successful purchase for SKU:", event.OneTimeProductNotification.Sku)
+
+	// TODO: Implement database logic to save the purchase
+	// Example:
+	// purchase := models.OneTimePurchase{
+	// 	Sku:           event.OneTimeProductNotification.Sku,
+	// 	PurchaseToken: event.OneTimeProductNotification.PurchaseToken,
+	// 	Status:        "purchased",
+	// 	CreatedAt:     time.Now(),
+	// }
+	// return database.DB.Create(&purchase).Error
+
+	return nil
+}
+
+// HandleOneTimePurchaseCanceled handles refunds for one-time purchases
+func HandleOneTimePurchaseCanceled(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔄 [One-Time Purchase] Processing refund for SKU:", event.OneTimeProductNotification.Sku)
+
+	// TODO: Implement database logic to mark purchase as refunded
+	// Example:
+	// return database.DB.Model(&models.OneTimePurchase{}).
+	// 	Where("sku = ?", event.OneTimeProductNotification.Sku).
+	// 	Update("status", "refunded").Error
+
+	return nil
+}
+
+// HandleVoidedSubscription processes voided subscription purchases
+func HandleVoidedSubscription(event models.GooglePlayWebhookEvent) error {
+	log.Println("🚫 [Voided Subscription] Processing voided order:", event.VoidedPurchaseNotification.OrderID)
+
+	// TODO: Implement database logic to void the subscription
+	// Example:
+	// return database.DB.Model(&models.Subscription{}).
+	// 	Where("subscription_id = ?", event.VoidedPurchaseNotification.OrderID).
+	// 	Update("status", "voided").Error
+
+	return nil
+}
+
+// HandleVoidedOneTimePurchase processes voided one-time product purchases
+func HandleVoidedOneTimePurchase(event models.GooglePlayWebhookEvent) error {
+	log.Println("🚫 [Voided One-Time Purchase] Processing voided order:", event.VoidedPurchaseNotification.OrderID)
+
+	// TODO: Implement database logic to mark purchase as voided
+	// Example:
+	// return database.DB.Model(&models.OneTimePurchase{}).
+	// 	Where("purchase_token = ?", event.VoidedPurchaseNotification.PurchaseToken).
+	// 	Update("status", "voided").Error
+
 	return nil
 }
