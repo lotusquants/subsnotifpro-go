@@ -7,9 +7,23 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"subsnotifpro-go/internal/constants"
+	playstoreClientHandler "subsnotifpro-go/internal/google_playstore/client/handler"
+	playstoreClientService "subsnotifpro-go/internal/google_playstore/client/service"
+	playstoreRTDNHandler "subsnotifpro-go/internal/google_playstore/rtdn/handler"
+	playstoreRTDNService "subsnotifpro-go/internal/google_playstore/rtdn/service"
+	playstoreSettingsHandler "subsnotifpro-go/internal/google_playstore/settings/handler"
+	playstoreSettingService "subsnotifpro-go/internal/google_playstore/settings/service"
+	playstoreSubscriptionSyncHandler "subsnotifpro-go/internal/google_playstore/subscription_catalog/handler"
+	playstoreSubscriptionSyncService "subsnotifpro-go/internal/google_playstore/subscription_catalog/service"
 	"sync"
 	"syscall"
 	"time"
+
+	playstoreRTDNRepo "subsnotifpro-go/internal/google_playstore/rtdn/repository"
+	playstoreSettingRepo "subsnotifpro-go/internal/google_playstore/settings/repository"
+	playstoreSubscriptionSyncRepo "subsnotifpro-go/internal/google_playstore/subscription_catalog/repository"
 
 	"subsnotifpro-go/config"
 	"subsnotifpro-go/database"
@@ -25,9 +39,13 @@ func main() {
 	// ✅ Load configuration
 	cfg := config.LoadConfig()
 
-	// ✅ Initialize database
-	database.ConnectDatabase()   // Initialize the database
-	database.AutoMigrateTables() // Auto-migrate tables
+	// ✅ Initialize database and pass to repositories
+	db, err := database.ConnectDatabase()
+	if err != nil {
+		log.Fatalf("❌ Database connection failed: %v", err)
+	}
+	database.AutoMigrateTables(db)     // Auto-migrate tables
+	database.ApplyCompositeIndexes(db) // Apply the composite indexes
 
 	// ✅ Get a **single** RabbitMQ Channel (initialized here)
 	ch, err := messaging.GetChannel(ctx)
@@ -47,8 +65,47 @@ func main() {
 		messaging.MonitorRabbitMQConnection(ctx)
 	}()
 
-	// ✅ Setup HTTP server
-	router := routes.SetupRouter(ch)
+	// ✅ Initialize Repositories, Services and Handlers
+
+	// Initialize RTDN repository
+	psRtdnRepo := playstoreRTDNRepo.NewRTDNRepository(db)
+	// Initialize RTDN service
+	psRtdnService := playstoreRTDNService.NewRTDNService(ctx, psRtdnRepo)
+	// Initialize RTDN handler
+	psRtdnHandler := playstoreRTDNHandler.NewRTDNHandler(psRtdnService)
+
+	// Initialize playstore Settings repository
+	psSettingsRepo := playstoreSettingRepo.NewPlaystoreSettingsRepository(db)
+
+	// Initialize  playstore client service
+	psClientService := playstoreClientService.NewGooglePlayClientService(ctx, psSettingsRepo)
+
+	// Initialize  playstore Settings service
+	psSettingsService := playstoreSettingService.NewPlaystoreSettingsService(ctx, psSettingsRepo, psClientService)
+	// Initialize  playstore Settings handler
+	psSettingsHandler := playstoreSettingsHandler.NewPlaystoreSettingsHandler(psSettingsService)
+
+	// Initialize  playstore client handler
+	psClientHandler := playstoreClientHandler.NewPlaystoreClientHandler(psClientService)
+
+	syncBatchSize := constants.DEFAULT_SYNC_BATCH_SIZE
+	if envSize := os.Getenv("SYNC_BATCH_SIZE"); envSize != "" {
+		if parsedSize, err := strconv.Atoi(envSize); err == nil {
+			syncBatchSize = parsedSize
+		}
+	}
+
+	// Initialize Subscription Catalog repository, service, and handler
+	// Initialize SubscriptionCatalog repository
+	psSubscriptionCatalogRepo := playstoreSubscriptionSyncRepo.NewSubscriptionCatalogRepository(db, syncBatchSize)
+	// Initialize SubscriptionCatalog service
+	psSubscriptionCatalogService := playstoreSubscriptionSyncService.NewSubscriptionCatalogService(ctx, psSubscriptionCatalogRepo, psClientService)
+	// Initialize SubscriptionCatalog handler
+	psSubscriptionCatalogHandler := playstoreSubscriptionSyncHandler.NewSubscriptionCatalogHandler(psSubscriptionCatalogService)
+
+	// ✅ Setup HTTP server and pass handlers to routes
+	router := routes.SetupRouter(ch, psRtdnHandler, psSettingsHandler, psClientHandler, psSubscriptionCatalogHandler)
+
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%s", cfg.ServerPort),
 		Handler: router,
@@ -85,7 +142,7 @@ func main() {
 	wg.Wait()
 
 	// ✅ Close database
-	database.CloseDatabase()
+	database.CloseDatabase(db)
 
 	// ✅ Cleanup RabbitMQ resources
 	log.Println("🚦 Closing RabbitMQ Consumers...")

@@ -1,209 +1,129 @@
-// internal/google_playstore/rtdn/repository/repository.go
 package repository
 
 import (
 	"context"
-	"errors"
-	"log"
-	"subsnotifpro-go/database"
-	"subsnotifpro-go/internal/google_playstore/models"
+	"fmt"
+
+	"subsnotifpro-go/internal/google_playstore/rtdn/models"
 	"subsnotifpro-go/internal/logger"
 
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
-// SaveWebhookEvent saves webhook event to the database
-func SaveWebhookEvent(event *models.GooglePlayWebhookEvent) error {
-	tx := database.DB.Begin() // ✅ Start transaction
-
-	if err := tx.Create(event).Error; err != nil {
-		tx.Rollback() // ❌ Rollback on failure
-		return err
-	}
-
-	return tx.Commit().Error // ✅ Commit transaction
+// RTDNRepository defines the interface for RTDN repository
+type RTDNRepository interface {
+	SaveWebhookEvent(ctx context.Context, event *models.GooglePlayWebhookEvent) error
+	GetPendingEvents(ctx context.Context, limit int) ([]models.GooglePlayWebhookEvent, error)
+	UpdateWebhookStatus(ctx context.Context, eventID string, status string) error
+	IncrementRetryCount(ctx context.Context, eventID string) error
+	MoveToDeadLetterQueue(ctx context.Context, eventID string) error
 }
 
-// GetPendingEvents retrieves unprocessed webhook events with pagination
-func GetPendingEvents(ctx context.Context, limit int) ([]models.GooglePlayWebhookEvent, error) {
-	var events []models.GooglePlayWebhookEvent
-	tx := database.DB.WithContext(ctx).Begin() // ✅ Pass ctx to ensure cancellation
+// ✅ Struct with Injected Database Instance
+type rtdnRepository struct {
+	db *gorm.DB
+}
 
-	err := tx.
+// ✅ Constructor Function to Inject DB
+func NewRTDNRepository(db *gorm.DB) RTDNRepository {
+	return &rtdnRepository{db: db}
+}
+
+// -------------------------
+// 🚀 Save Webhook Event (Transaction)
+// -------------------------
+func (r *rtdnRepository) SaveWebhookEvent(ctx context.Context, event *models.GooglePlayWebhookEvent) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(event).Error; err != nil {
+			return fmt.Errorf("failed to save webhook event: %w", err)
+		}
+		return nil
+	})
+}
+
+// -------------------------
+// 🚀 Get Pending Events
+// -------------------------
+func (r *rtdnRepository) GetPendingEvents(ctx context.Context, limit int) ([]models.GooglePlayWebhookEvent, error) {
+	var events []models.GooglePlayWebhookEvent
+	err := r.db.WithContext(ctx).
 		Where("status = ?", "pending").
 		Order("retry_count DESC, created_at ASC").
 		Limit(limit).
 		Find(&events).Error
 
 	if err != nil {
-		tx.Rollback() // ❌ Rollback on failure
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch pending webhook events: %w", err)
 	}
-	return events, tx.Commit().Error // ✅ Commit if successful
+	return events, nil
 }
 
-func UpdateWebhookStatus(eventID string, status string) error {
-	logger.Log.Infof("Updating status for event %s to %s", eventID, status)
-	result := database.DB.Model(&models.GooglePlayWebhookEvent{}).Where("id = ?", eventID).Update("status", status)
+// -------------------------
+// 🚀 Update Webhook Status
+// -------------------------
+func (r *rtdnRepository) UpdateWebhookStatus(ctx context.Context, eventID string, status string) error {
+	logger.Log.WithFields(logrus.Fields{
+		"event_id": eventID,
+		"status":   status,
+	}).Info("✅ Updating webhook status")
+
+	result := r.db.WithContext(ctx).
+		Model(&models.GooglePlayWebhookEvent{}).
+		Where("id = ?", eventID).
+		Update("status", status)
+
 	if result.Error != nil {
-		logger.Log.Errorf("Error while updating status: %v", result.Error)
-		return result.Error
+		logger.Log.Errorf("❌ Error updating webhook status: %v", result.Error)
+		return fmt.Errorf("failed to update webhook status: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return errors.New("event not found")
+		logger.Log.Warnf("⚠️ Event not found: %s", eventID)
+		return fmt.Errorf("event not found: %s", eventID)
 	}
-	return nil
-}
 
-// IncrementRetryCount increases retry count for failed events
-func IncrementRetryCount(eventID string) error {
-	return database.DB.Model(&models.GooglePlayWebhookEvent{}).Where("id = ?", eventID).Update("retry_count", gorm.Expr("retry_count + ?", 1)).Error
-}
-
-// MoveToDeadLetterQueue moves failed events to DLQ after max retries
-func MoveToDeadLetterQueue(event models.GooglePlayWebhookEvent) error {
-	event.Status = "dead_letter"
-	return database.DB.Save(&event).Error
-}
-
-// 🔹 Subscription Event Handlers 🔹
-
-// SaveSubscription saves a new subscription purchase event
-func SaveSubscription(event models.GooglePlayWebhookEvent) error {
-	log.Println("💾 [Placeholder] Saving new subscription:", event.SubscriptionNotification.SubscriptionID)
-	return nil
-}
-
-// UpdateSubscriptionRenewal handles subscription renewal
-func UpdateSubscriptionRenewal(event models.GooglePlayWebhookEvent) error {
-	log.Println("🔄 [Placeholder] Updating subscription renewal:", event.SubscriptionNotification.SubscriptionID)
-	return nil
-}
-
-// CancelSubscription marks a subscription as canceled
-func CancelSubscription(event models.GooglePlayWebhookEvent) error {
-	log.Println("🚫 [Placeholder] Canceling subscription:", event.SubscriptionNotification.SubscriptionID)
-	return nil
-}
-
-// RecoverSubscription recovers a subscription from hold
-func RecoverSubscription(event models.GooglePlayWebhookEvent) error {
-	log.Println("🔄 [Placeholder] Recovering subscription:", event.SubscriptionNotification.SubscriptionID)
-	return nil
-}
-
-// HandleSubscriptionOnHold processes subscription hold events
-func HandleSubscriptionOnHold(event models.GooglePlayWebhookEvent) error {
-	log.Println("⏳ [Placeholder] Handling subscription on hold:", event.SubscriptionNotification.SubscriptionID)
-	return nil
-}
-
-// HandleSubscriptionInGracePeriod processes subscription grace period events
-func HandleSubscriptionInGracePeriod(event models.GooglePlayWebhookEvent) error {
-	log.Println("⚠️ [Placeholder] Handling subscription in grace period:", event.SubscriptionNotification.SubscriptionID)
-	return nil
-}
-
-// HandleSubscriptionRestart processes subscription restart events
-func HandleSubscriptionRestart(event models.GooglePlayWebhookEvent) error {
-	log.Println("🔄 [Placeholder] Handling subscription restart:", event.SubscriptionNotification.SubscriptionID)
-	return nil
-}
-
-// HandlePriceChangeConfirmation processes subscription price change confirmation
-func HandlePriceChangeConfirmation(event models.GooglePlayWebhookEvent) error {
-	log.Println("💰 [Placeholder] Handling price change confirmation:", event.SubscriptionNotification.SubscriptionID)
-	return nil
-}
-
-// HandleSubscriptionDeferred processes subscription deferment events
-func HandleSubscriptionDeferred(event models.GooglePlayWebhookEvent) error {
-	log.Println("📅 [Placeholder] Handling subscription deferment:", event.SubscriptionNotification.SubscriptionID)
-	return nil
-}
-
-// HandleSubscriptionPaused processes subscription pause events
-func HandleSubscriptionPaused(event models.GooglePlayWebhookEvent) error {
-	log.Println("⏸️ [Placeholder] Handling subscription pause:", event.SubscriptionNotification.SubscriptionID)
-	return nil
-}
-
-// HandlePauseScheduleChanged processes subscription pause schedule changes
-func HandlePauseScheduleChanged(event models.GooglePlayWebhookEvent) error {
-	log.Println("🔄 [Placeholder] Handling pause schedule change:", event.SubscriptionNotification.SubscriptionID)
-	return nil
-}
-
-// HandleSubscriptionRevoked processes subscription revocation events
-func HandleSubscriptionRevoked(event models.GooglePlayWebhookEvent) error {
-	log.Println("🚫 [Placeholder] Handling subscription revocation:", event.SubscriptionNotification.SubscriptionID)
-	return nil
-}
-
-// HandleSubscriptionExpired processes subscription expiration events
-func HandleSubscriptionExpired(event models.GooglePlayWebhookEvent) error {
-	log.Println("⏳ [Placeholder] Handling subscription expiration:", event.SubscriptionNotification.SubscriptionID)
-	return nil
-}
-
-// HandlePendingPurchaseCanceled processes pending purchase cancellation events
-func HandlePendingPurchaseCanceled(event models.GooglePlayWebhookEvent) error {
-	log.Println("❌ [Placeholder] Handling pending purchase cancellation:", event.SubscriptionNotification.SubscriptionID)
-	return nil
-}
-
-// SaveOneTimePurchase handles successful one-time purchases
-func SaveOneTimePurchase(event models.GooglePlayWebhookEvent) error {
-	log.Println("✅ [One-Time Purchase] Saving successful purchase for SKU:", event.OneTimeProductNotification.Sku)
-
-	// TODO: Implement database logic to save the purchase
-	// Example:
-	// purchase := models.OneTimePurchase{
-	// 	Sku:           event.OneTimeProductNotification.Sku,
-	// 	PurchaseToken: event.OneTimeProductNotification.PurchaseToken,
-	// 	Status:        "purchased",
-	// 	CreatedAt:     time.Now(),
-	// }
-	// return database.DB.Create(&purchase).Error
+	logger.Log.WithFields(logrus.Fields{
+		"event_id": eventID,
+		"status":   status,
+	}).Info("✅ Webhook status updated successfully")
 
 	return nil
 }
 
-// HandleOneTimePurchaseCanceled handles refunds for one-time purchases
-func HandleOneTimePurchaseCanceled(event models.GooglePlayWebhookEvent) error {
-	log.Println("🔄 [One-Time Purchase] Processing refund for SKU:", event.OneTimeProductNotification.Sku)
+// -------------------------
+// 🚀 Increment Retry Count
+// -------------------------
+func (r *rtdnRepository) IncrementRetryCount(ctx context.Context, eventID string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.GooglePlayWebhookEvent{}).
+			Where("id = ?", eventID).
+			Update("retry_count", gorm.Expr("retry_count + ?", 1))
 
-	// TODO: Implement database logic to mark purchase as refunded
-	// Example:
-	// return database.DB.Model(&models.OneTimePurchase{}).
-	// 	Where("sku = ?", event.OneTimeProductNotification.Sku).
-	// 	Update("status", "refunded").Error
-
-	return nil
+		if result.Error != nil {
+			return fmt.Errorf("failed to increment retry count: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("event not found: %s", eventID)
+		}
+		return nil
+	})
 }
 
-// HandleVoidedSubscription processes voided subscription purchases
-func HandleVoidedSubscription(event models.GooglePlayWebhookEvent) error {
-	log.Println("🚫 [Voided Subscription] Processing voided order:", event.VoidedPurchaseNotification.OrderID)
+// -------------------------
+// 🚀 Move to Dead Letter Queue (DLQ)
+// -------------------------
+func (r *rtdnRepository) MoveToDeadLetterQueue(ctx context.Context, eventID string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.GooglePlayWebhookEvent{}).
+			Where("id = ?", eventID).
+			Update("status", "dead_letter")
 
-	// TODO: Implement database logic to void the subscription
-	// Example:
-	// return database.DB.Model(&models.Subscription{}).
-	// 	Where("subscription_id = ?", event.VoidedPurchaseNotification.OrderID).
-	// 	Update("status", "voided").Error
-
-	return nil
-}
-
-// HandleVoidedOneTimePurchase processes voided one-time product purchases
-func HandleVoidedOneTimePurchase(event models.GooglePlayWebhookEvent) error {
-	log.Println("🚫 [Voided One-Time Purchase] Processing voided order:", event.VoidedPurchaseNotification.OrderID)
-
-	// TODO: Implement database logic to mark purchase as voided
-	// Example:
-	// return database.DB.Model(&models.OneTimePurchase{}).
-	// 	Where("purchase_token = ?", event.VoidedPurchaseNotification.PurchaseToken).
-	// 	Update("status", "voided").Error
-
-	return nil
+		if result.Error != nil {
+			return fmt.Errorf("failed to move event to DLQ: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("event not found: %s", eventID)
+		}
+		return nil
+	})
 }

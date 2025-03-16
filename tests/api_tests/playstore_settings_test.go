@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"subsnotifpro-go/database"
-	playstoresettings "subsnotifpro-go/internal/google_playstore/google_playstore_settings"
+	"subsnotifpro-go/internal/google_playstore/google_playstore_settings/repository"
 	"subsnotifpro-go/internal/messaging"
 	"subsnotifpro-go/routes"
 
@@ -90,7 +90,7 @@ func TestValidateServiceAccount(t *testing.T) {
 
 // 🔴 4️⃣ Test Validate Without Service Account
 func TestValidateWithoutServiceAccount(t *testing.T) {
-	playstoresettings.DeleteExistingServiceAccount() // Ensure no service account exists
+	repository.DeleteExistingServiceAccount() // Ensure no service account exists
 
 	req := httptest.NewRequest("GET", "/api/google-play/validate-service-account", nil)
 	w := httptest.NewRecorder()
@@ -103,7 +103,7 @@ func TestValidateWithoutServiceAccount(t *testing.T) {
 
 // 🔴 7️⃣ Test Get Service Account Status Without Any Account
 func TestGetServiceAccountStatusWithoutAccount(t *testing.T) {
-	playstoresettings.DeleteExistingServiceAccount()
+	repository.DeleteExistingServiceAccount()
 
 	req := httptest.NewRequest("GET", "/api/google-play/service-account-status", nil)
 	w := httptest.NewRecorder()
@@ -114,7 +114,7 @@ func TestGetServiceAccountStatusWithoutAccount(t *testing.T) {
 
 // 🔴 9️⃣ Test Delete When No Service Account Exists
 func TestDeleteServiceAccountWithoutExisting(t *testing.T) {
-	playstoresettings.DeleteExistingServiceAccount()
+	repository.DeleteExistingServiceAccount()
 
 	req := httptest.NewRequest("DELETE", "/api/google-play/delete-service-account", nil)
 	w := httptest.NewRecorder()

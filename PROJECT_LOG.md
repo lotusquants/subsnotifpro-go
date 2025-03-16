@@ -203,3 +203,10 @@ It will handle subscription lifecycle events from Google Play Store and Apple Ap
    - Implemented `/api/google-play/rtdn/dlq/size` to check DLQ size.
    - Added `/api/google-play/rtdn/dlq/retry` to **retry failed webhook events** from DLQ.
 
+#### ✅ **Step 16  - Refactor: Separate consumer and HTTP server logic into distinct services** - (2025-02-08)
+
+- **Completed** the separation of consumer and HTTP server logic into different `main.go` files.
+
+- Successfully ensured that the consumer logic is now independent, running on separate services without interfering with the HTTP server.
+- **Addressed** environment variable issues, ensuring proper loading of `.env` files for both services when run separately in different terminals.
+- **Verified** that consumers can be scaled independently using different service clusters for restb api and consumers for better scalability and performance.

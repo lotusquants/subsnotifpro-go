@@ -8,13 +8,27 @@ import (
 	"time"
 
 	"subsnotifpro-go/internal/constants"
-	"subsnotifpro-go/internal/google_playstore/models"
+	"subsnotifpro-go/internal/google_playstore/rtdn/models"
 	"subsnotifpro-go/internal/google_playstore/rtdn/repository"
 	"subsnotifpro-go/internal/google_playstore/rtdn/service"
 )
 
+// Worker struct to hold repository and service
+type Worker struct {
+	repo    repository.RTDNRepository
+	service service.RTDNService
+}
+
+// NewWorker initializes the Worker with repository and service dependencies
+func NewWorker(repo repository.RTDNRepository, svc service.RTDNService) *Worker {
+	return &Worker{
+		repo:    repo,
+		service: svc,
+	}
+}
+
 // ProcessPendingEvents processes pending webhook events with retry logic
-func ProcessPendingEvents(ctx context.Context, batchSize int) {
+func (w *Worker) ProcessPendingEvents(ctx context.Context, batchSize int) {
 	ticker := time.NewTicker(time.Second * constants.EventProcessingInterval)
 	defer ticker.Stop() // ✅ Stop ticker when function exits
 
@@ -35,20 +49,20 @@ func ProcessPendingEvents(ctx context.Context, batchSize int) {
 			log.Println("📢 Checking for pending events...")
 
 			// ✅ Fetch pending events in batches
-			events, err := repository.GetPendingEvents(ctx, batchSize)
+			events, err := w.repo.GetPendingEvents(ctx, batchSize)
 			if err != nil {
 				log.Printf("❌ Error fetching pending events: %v", err)
 				continue
 			}
 
 			// ✅ Process events safely
-			processEvents(ctx, events)
+			w.processEvents(ctx, events)
 		}
 	}
 }
 
 // processEvents handles individual event processing with retry logic
-func processEvents(ctx context.Context, events []models.GooglePlayWebhookEvent) {
+func (w *Worker) processEvents(ctx context.Context, events []models.GooglePlayWebhookEvent) {
 	for _, event := range events {
 		select {
 		case <-ctx.Done():
@@ -59,23 +73,23 @@ func processEvents(ctx context.Context, events []models.GooglePlayWebhookEvent) 
 			// ✅ Move to DLQ if max retries reached
 			if event.RetryCount >= constants.MaxRetries {
 				log.Printf("⚠️ Max retries reached for event %s. Moving to DLQ...", event.ID)
-				if err := retryMoveToDLQ(event, 3); err != nil { // ✅ Retry DLQ move before failing
+				if err := w.retryMoveToDLQ(ctx, event, 3); err != nil { // ✅ Retry DLQ move before failing
 					log.Printf("❌ Critical: Failed to move event %s to DLQ after multiple retries: %v", event.ID, err)
 				}
 				continue
 			}
 
 			// ✅ Process the event
-			err := service.ProcessWebhookEvent(event)
+			err := w.service.ProcessWebhookEvent(event)
 			if err != nil {
 				log.Printf("❌ Error processing event %s. Retrying...", event.ID)
 				exponentialBackoffWithJitter(event.RetryCount)
 
-				if err := repository.IncrementRetryCount(event.ID); err != nil {
+				if err := w.repo.IncrementRetryCount(ctx, event.ID); err != nil {
 					log.Printf("⚠️ Failed to increment retry count for event %s: %v", event.ID, err)
 				}
 			} else {
-				if err := repository.UpdateWebhookStatus(event.ID, "completed"); err != nil {
+				if err := w.repo.UpdateWebhookStatus(ctx, event.ID, "completed"); err != nil {
 					log.Printf("⚠️ Failed to update status for event %s: %v", event.ID, err)
 				}
 			}
@@ -84,10 +98,10 @@ func processEvents(ctx context.Context, events []models.GooglePlayWebhookEvent) 
 }
 
 // retryMoveToDLQ attempts to move an event to the Dead Letter Queue (DLQ) with retries
-func retryMoveToDLQ(event models.GooglePlayWebhookEvent, retries int) error {
+func (w *Worker) retryMoveToDLQ(ctx context.Context, event models.GooglePlayWebhookEvent, retries int) error {
 	var lastErr error
 	for i := 0; i < retries; i++ {
-		err := repository.MoveToDeadLetterQueue(event)
+		err := w.repo.MoveToDeadLetterQueue(ctx, event.ID)
 		if err == nil {
 			return nil // ✅ Success
 		}

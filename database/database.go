@@ -7,20 +7,18 @@ import (
 	"strconv"
 	"time"
 
-	"subsnotifpro-go/models"
+	"subsnotifpro-go/internal/models"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"gorm.io/gorm/schema"
 )
 
-// DB is the global database connection
-var DB *gorm.DB
-
-// ConnectDatabase initializes the correct database connection
-func ConnectDatabase() {
+// ConnectDatabase initializes the database connection and returns a DB instance
+func ConnectDatabase() (*gorm.DB, error) {
 	var err error
 
 	// Load database type
@@ -62,21 +60,25 @@ func ConnectDatabase() {
 		dialector = sqlite.Open(dsn)
 
 	default:
-		log.Fatal("❌ Unsupported database type. Available options: postgres, mysql, sqlite")
+		return nil, fmt.Errorf("❌ Unsupported database type. Available options: postgres, mysql, sqlite")
 	}
 
-	// Open the database with GORM query logging enabled/disabled
-	DB, err = gorm.Open(dialector, &gorm.Config{
+	// Open the database with GORM query logging enabled/disabled with custom naming strategy
+	db, err := gorm.Open(dialector, &gorm.Config{
 		Logger: gormLogger, // This only affects database query logs
+		NamingStrategy: schema.NamingStrategy{
+			TablePrefix:   "subsnotifpro_",
+			SingularTable: true,
+		},
 	})
 	if err != nil {
-		log.Fatalf("❌ Failed to connect to %s database: %v", dbType, err)
+		return nil, fmt.Errorf("❌ Failed to connect to %s database: %w", dbType, err)
 	}
 
 	// Set up connection pooling
-	sqlDB, err := DB.DB()
+	sqlDB, err := db.DB()
 	if err != nil {
-		log.Fatalf("❌ Failed to access database instance: %v", err)
+		return nil, fmt.Errorf("❌ Failed to access database instance: %w", err)
 	}
 
 	// Load pooling configurations from .env
@@ -89,19 +91,51 @@ func ConnectDatabase() {
 	sqlDB.SetConnMaxLifetime(connMaxLifetime)
 
 	log.Printf("🚀 Connected to %s database successfully!", dbType)
+	return db, nil
 }
 
 // AutoMigrateTables automatically creates required tables
-func AutoMigrateTables() {
-	err := DB.AutoMigrate(models.AllModels...)
+func AutoMigrateTables(db *gorm.DB) error {
+	err := db.AutoMigrate(models.AllModels...)
 	if err != nil {
-		log.Fatalf("❌ Auto-migration failed: %v", err)
+		return fmt.Errorf("❌ Auto-migration failed: %w", err)
 	}
-	log.Println("✅ Auto-migration for test models completed successfully!")
+	log.Printf("✅ Auto-migration completed successfully for %s database!", os.Getenv("DB_TYPE"))
+	return nil
 }
 
-func CloseDatabase() {
-	sqlDB, err := DB.DB()
+// ApplyCompositeIndexes manually adds composite indexes for performance tuning.
+func ApplyCompositeIndexes(db *gorm.DB) error {
+	compositeIndexes := []string{
+		// SubscriptionPurchaseV2 composite indexes
+		`CREATE INDEX IF NOT EXISTS idx_subscription_user_plan_type ON subsnotifpro_subscription_purchase_v2 (user_id, plan_type)`,
+		`CREATE INDEX IF NOT EXISTS idx_subscription_plan_start_time ON subsnotifpro_subscription_purchase_v2 (plan_type, start_time)`,
+
+		// AutoRenewingPlanHistory composite indexes
+		`CREATE INDEX IF NOT EXISTS idx_auto_renewing_history_subscription_change ON subsnotifpro_auto_renewing_plan_history (subscription_id, change_type)`,
+		`CREATE INDEX IF NOT EXISTS idx_auto_renewing_history_change_time ON subsnotifpro_auto_renewing_plan_history (change_time)`,
+
+		// PrepaidPlanHistory composite indexes
+		`CREATE INDEX IF NOT EXISTS idx_prepaid_history_subscription_change ON subsnotifpro_prepaid_plan_history (subscription_id, change_type)`,
+		`CREATE INDEX IF NOT EXISTS idx_prepaid_history_change_time ON subsnotifpro_prepaid_plan_history (change_time)`,
+
+		// DeferredItemReplacementHistory composite indexes
+		`CREATE INDEX IF NOT EXISTS idx_deferred_item_replacement_subscription ON subsnotifpro_deferred_item_replacement_history (subscription_id, plan_type)`,
+
+		// SignupPromotionHistory composite indexes
+		`CREATE INDEX IF NOT EXISTS idx_signup_promotion_subscription ON subsnotifpro_signup_promotion_history (subscription_id, plan_type)`,
+	}
+
+	for _, query := range compositeIndexes {
+		if err := db.Exec(query).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func CloseDatabase(db *gorm.DB) {
+	sqlDB, err := db.DB()
 	if err != nil {
 		log.Println("❌ Error getting raw DB instance:", err)
 		return

@@ -2,147 +2,238 @@
 package service
 
 import (
+	"context"
 	"log"
+	"time"
+
 	"subsnotifpro-go/internal/constants"
-	"subsnotifpro-go/internal/google_playstore/models"
+	"subsnotifpro-go/internal/google_playstore/rtdn/models"
 	"subsnotifpro-go/internal/google_playstore/rtdn/repository"
 	"subsnotifpro-go/internal/metrics"
-	"time"
 )
 
-// EventHandlerFunc defines a function signature for handling subscription events
-type EventHandlerFunc func(event models.GooglePlayWebhookEvent) error
+// RTDNService defines an interface for RTDN service methods
+type RTDNService interface {
+	SaveWebhookEvent(event *models.GooglePlayWebhookEvent) error
+	ProcessWebhookEvent(event models.GooglePlayWebhookEvent) error
+	ProcessSubscriptionEvent(event models.GooglePlayWebhookEvent) error
+	ProcessOneTimeProductEvent(event models.GooglePlayWebhookEvent) error
+	ProcessVoidedPurchaseEvent(event models.GooglePlayWebhookEvent) error
 
-// eventHandlers maps subscription notification types to handler functions
-var eventHandlers = map[int]EventHandlerFunc{
-	constants.SUBSCRIPTION_PURCHASED:                 repository.SaveSubscription,
-	constants.SUBSCRIPTION_RENEWED:                   repository.UpdateSubscriptionRenewal,
-	constants.SUBSCRIPTION_CANCELED:                  repository.CancelSubscription,
-	constants.SUBSCRIPTION_RECOVERED:                 repository.RecoverSubscription,
-	constants.SUBSCRIPTION_ON_HOLD:                   repository.HandleSubscriptionOnHold,
-	constants.SUBSCRIPTION_IN_GRACE_PERIOD:           repository.HandleSubscriptionInGracePeriod,
-	constants.SUBSCRIPTION_RESTARTED:                 repository.HandleSubscriptionRestart,
-	constants.SUBSCRIPTION_PRICE_CHANGE_CONFIRMED:    repository.HandlePriceChangeConfirmation,
-	constants.SUBSCRIPTION_DEFERRED:                  repository.HandleSubscriptionDeferred,
-	constants.SUBSCRIPTION_PAUSED:                    repository.HandleSubscriptionPaused,
-	constants.SUBSCRIPTION_PAUSE_SCHEDULE_CHANGED:    repository.HandlePauseScheduleChanged,
-	constants.SUBSCRIPTION_REVOKED:                   repository.HandleSubscriptionRevoked,
-	constants.SUBSCRIPTION_EXPIRED:                   repository.HandleSubscriptionExpired,
-	constants.SUBSCRIPTION_PENDING_PURCHASE_CANCELED: repository.HandlePendingPurchaseCanceled,
+	// Individual event handlers for different notification types
+	ProcessSubscriptionPurchased(event models.GooglePlayWebhookEvent) error
+	ProcessSubscriptionRenewed(event models.GooglePlayWebhookEvent) error
+	ProcessSubscriptionCanceled(event models.GooglePlayWebhookEvent) error
+	ProcessSubscriptionRecovered(event models.GooglePlayWebhookEvent) error
+	ProcessSubscriptionOnHold(event models.GooglePlayWebhookEvent) error
+	ProcessSubscriptionInGracePeriod(event models.GooglePlayWebhookEvent) error
+	ProcessSubscriptionRestarted(event models.GooglePlayWebhookEvent) error
+	ProcessSubscriptionPriceChangeConfirmed(event models.GooglePlayWebhookEvent) error
+	ProcessSubscriptionDeferred(event models.GooglePlayWebhookEvent) error
+	ProcessSubscriptionPaused(event models.GooglePlayWebhookEvent) error
+	ProcessSubscriptionPauseScheduleChanged(event models.GooglePlayWebhookEvent) error
+	ProcessSubscriptionRevoked(event models.GooglePlayWebhookEvent) error
+	ProcessSubscriptionExpired(event models.GooglePlayWebhookEvent) error
+	ProcessSubscriptionPendingPurchaseCanceled(event models.GooglePlayWebhookEvent) error
+	ProcessOneTimeProductPurchased(event models.GooglePlayWebhookEvent) error
+	ProcessOneTimeProductCanceled(event models.GooglePlayWebhookEvent) error
+	ProcessVoidedSubscription(event models.GooglePlayWebhookEvent) error
+	ProcessVoidedOneTimePurchase(event models.GooglePlayWebhookEvent) error
 }
 
-// One-Time Product Event Handlers
-var oneTimeProductHandlers = map[int]EventHandlerFunc{
-	constants.ONE_TIME_PRODUCT_PURCHASED: repository.SaveOneTimePurchase,
-	constants.ONE_TIME_PRODUCT_CANCELED:  repository.HandleOneTimePurchaseCanceled,
+// rtdnService implements the RTDNService interface
+type rtdnService struct {
+	repo repository.RTDNRepository
+	ctx  context.Context
+
+	// Handler maps
+	subscriptionHandlers   map[int]func(models.GooglePlayWebhookEvent) error
+	oneTimeProductHandlers map[int]func(models.GooglePlayWebhookEvent) error
+	voidedPurchaseHandlers map[int]func(models.GooglePlayWebhookEvent) error
 }
 
-// Voided Purchase Event Handlers
-var voidedPurchaseHandlers = map[int]EventHandlerFunc{
-	constants.PRODUCT_TYPE_SUBSCRIPTION: repository.HandleVoidedSubscription,
-	constants.PRODUCT_TYPE_ONE_TIME:     repository.HandleVoidedOneTimePurchase,
+// NewRTDNService creates a new instance of RTDNService
+func NewRTDNService(ctx context.Context, repo repository.RTDNRepository) RTDNService {
+	service := &rtdnService{repo: repo, ctx: ctx}
+
+	// Initialize handler maps with instance methods
+	service.subscriptionHandlers = map[int]func(models.GooglePlayWebhookEvent) error{
+		constants.SUBSCRIPTION_PURCHASED:                 service.ProcessSubscriptionPurchased,
+		constants.SUBSCRIPTION_RENEWED:                   service.ProcessSubscriptionRenewed,
+		constants.SUBSCRIPTION_CANCELED:                  service.ProcessSubscriptionCanceled,
+		constants.SUBSCRIPTION_RECOVERED:                 service.ProcessSubscriptionRecovered,
+		constants.SUBSCRIPTION_ON_HOLD:                   service.ProcessSubscriptionOnHold,
+		constants.SUBSCRIPTION_IN_GRACE_PERIOD:           service.ProcessSubscriptionInGracePeriod,
+		constants.SUBSCRIPTION_RESTARTED:                 service.ProcessSubscriptionRestarted,
+		constants.SUBSCRIPTION_PRICE_CHANGE_CONFIRMED:    service.ProcessSubscriptionPriceChangeConfirmed,
+		constants.SUBSCRIPTION_DEFERRED:                  service.ProcessSubscriptionDeferred,
+		constants.SUBSCRIPTION_PAUSED:                    service.ProcessSubscriptionPaused,
+		constants.SUBSCRIPTION_PAUSE_SCHEDULE_CHANGED:    service.ProcessSubscriptionPauseScheduleChanged,
+		constants.SUBSCRIPTION_REVOKED:                   service.ProcessSubscriptionRevoked,
+		constants.SUBSCRIPTION_EXPIRED:                   service.ProcessSubscriptionExpired,
+		constants.SUBSCRIPTION_PENDING_PURCHASE_CANCELED: service.ProcessSubscriptionPendingPurchaseCanceled,
+	}
+
+	service.oneTimeProductHandlers = map[int]func(models.GooglePlayWebhookEvent) error{
+		constants.ONE_TIME_PRODUCT_PURCHASED: service.ProcessOneTimeProductPurchased,
+		constants.ONE_TIME_PRODUCT_CANCELED:  service.ProcessOneTimeProductCanceled,
+	}
+
+	service.voidedPurchaseHandlers = map[int]func(models.GooglePlayWebhookEvent) error{
+		constants.PRODUCT_TYPE_SUBSCRIPTION: service.ProcessVoidedSubscription,
+		constants.PRODUCT_TYPE_ONE_TIME:     service.ProcessVoidedOneTimePurchase,
+	}
+
+	return service
 }
 
-// SaveWebhookEvent processes and stores Google Play RTDN webhook events
-func SaveWebhookEvent(event *models.GooglePlayWebhookEvent) error {
+// SaveWebhookEvent stores the Google Play RTDN webhook event
+func (s *rtdnService) SaveWebhookEvent(event *models.GooglePlayWebhookEvent) error {
 	log.Println("📩 Storing Google Play webhook event:", event.ID)
-
-	// Pass event to repository layer
-	return repository.SaveWebhookEvent(event)
+	return s.repo.SaveWebhookEvent(s.ctx, event)
 }
 
 // ProcessWebhookEvent routes Google Play webhook events based on event type
-func ProcessWebhookEvent(event models.GooglePlayWebhookEvent) error {
-	startTime := time.Now() // Track processing time
-
+func (s *rtdnService) ProcessWebhookEvent(event models.GooglePlayWebhookEvent) error {
+	startTime := time.Now()
 	var err error
-	if event.SubscriptionNotification != nil {
-		err = handleSubscriptionEvent(event)
-	} else if event.OneTimeProductNotification != nil {
-		err = handleOneTimePurchaseEvent(event)
-	} else if event.VoidedPurchaseNotification != nil {
-		err = handleVoidedPurchaseEvent(event)
-	} else if event.TestNotification != nil {
-		log.Println("🟢 Test notification received:", event.ID)
-		return nil
-	} else {
+
+	switch {
+	case event.SubscriptionNotification != nil:
+		err = s.ProcessSubscriptionEvent(event)
+	case event.OneTimeProductNotification != nil:
+		err = s.ProcessOneTimeProductEvent(event)
+	case event.VoidedPurchaseNotification != nil:
+		err = s.ProcessVoidedPurchaseEvent(event)
+	default:
 		log.Println("⚠️ Unrecognized RTDN event type:", event.ID)
 		return nil
 	}
 
-	// ✅ Record processing time
 	metrics.EventProcessingTime.WithLabelValues(event.PackageName).Observe(time.Since(startTime).Seconds())
 
 	if err != nil {
-		// ✅ Increment Failed Events Counter
 		metrics.FailedEvents.WithLabelValues(event.PackageName).Inc()
 		return err
 	}
 
-	// ✅ Increment Processed Events Counter
 	metrics.ProcessedEvents.WithLabelValues(event.PackageName).Inc()
 	return nil
 }
 
-// handleSubscriptionEvent dynamically processes subscription events
-func handleSubscriptionEvent(event models.GooglePlayWebhookEvent) error {
-	notification := event.SubscriptionNotification
-	eventType, exists := constants.SubscriptionNotificationTypes[notification.NotificationType]
-
-	if !exists {
-		log.Printf("⚠️ Unknown subscription event type: %d", notification.NotificationType)
-		return nil
-	}
-
-	log.Printf("📢 Processing Subscription Event: %s for Subscription ID: %s", eventType, notification.SubscriptionID)
-
-	// Get the handler function from the map
-	if handler, found := eventHandlers[notification.NotificationType]; found {
+// Process subscription events
+func (s *rtdnService) ProcessSubscriptionEvent(event models.GooglePlayWebhookEvent) error {
+	if handler, found := s.subscriptionHandlers[event.SubscriptionNotification.NotificationType]; found {
 		return handler(event)
 	}
-
-	log.Printf("⚠️ No handler defined for event type: %d", notification.NotificationType)
+	log.Println("⚠️ No handler for subscription event type:", event.SubscriptionNotification.NotificationType)
 	return nil
 }
 
-// handleOneTimePurchaseEvent routes one-time purchase events
-func handleOneTimePurchaseEvent(event models.GooglePlayWebhookEvent) error {
-	notification := event.OneTimeProductNotification
-	eventType, exists := constants.OneTimeProductNotificationTypes[notification.NotificationType]
-
-	if !exists {
-		log.Printf("⚠️ Unknown one-time purchase event type: %d", notification.NotificationType)
-		return nil
-	}
-
-	log.Printf("📢 Processing One-Time Purchase Event: %s for SKU: %s", eventType, notification.Sku)
-
-	// Route event to appropriate handler
-	if handler, found := oneTimeProductHandlers[notification.NotificationType]; found {
+// Process one-time product events
+func (s *rtdnService) ProcessOneTimeProductEvent(event models.GooglePlayWebhookEvent) error {
+	if handler, found := s.oneTimeProductHandlers[event.OneTimeProductNotification.NotificationType]; found {
 		return handler(event)
 	}
-
-	log.Printf("⚠️ No handler defined for one-time product event type: %d", notification.NotificationType)
+	log.Println("⚠️ No handler for one-time product event type:", event.OneTimeProductNotification.NotificationType)
 	return nil
 }
 
-// handleVoidedPurchaseEvent routes voided purchase events
-func handleVoidedPurchaseEvent(event models.GooglePlayWebhookEvent) error {
-	notification := event.VoidedPurchaseNotification
-	eventType, exists := constants.VoidedPurchaseNotificationTypes[notification.ProductType]
-
-	if !exists {
-		log.Printf("⚠️ Unknown voided purchase event type: %d", notification.ProductType)
-		return nil
-	}
-
-	log.Printf("🚫 Processing Voided Purchase Event: %s for Order ID: %s", eventType, notification.OrderID)
-
-	// Route event to appropriate handler
-	if handler, found := voidedPurchaseHandlers[notification.ProductType]; found {
+// Process voided purchase events
+func (s *rtdnService) ProcessVoidedPurchaseEvent(event models.GooglePlayWebhookEvent) error {
+	if handler, found := s.voidedPurchaseHandlers[event.VoidedPurchaseNotification.ProductType]; found {
 		return handler(event)
 	}
+	log.Println("⚠️ No handler for voided purchase event type:", event.VoidedPurchaseNotification.ProductType)
+	return nil
+}
 
-	log.Printf("⚠️ No handler defined for voided purchase event type: %d", notification.ProductType)
+func (s *rtdnService) ProcessSubscriptionPurchased(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Subscription Purchased Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessSubscriptionRenewed(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Subscription Renewed Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessSubscriptionCanceled(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Subscription Canceled Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessSubscriptionRecovered(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Subscription Recovered Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessSubscriptionOnHold(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Subscription On Hold Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessSubscriptionInGracePeriod(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Subscription In Grace Period Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessSubscriptionRestarted(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Subscription Restarted Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessSubscriptionPriceChangeConfirmed(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Subscription Price Change Confirmed Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessSubscriptionDeferred(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Subscription Deferred Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessSubscriptionPaused(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Subscription Paused Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessSubscriptionPauseScheduleChanged(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Subscription Pause Schedule Changed Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessSubscriptionRevoked(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Subscription Revoked Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessSubscriptionExpired(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Subscription Expired Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessSubscriptionPendingPurchaseCanceled(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Subscription Pending Purchase Canceled Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessOneTimeProductPurchased(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing One-Time Product Purchased Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessOneTimeProductCanceled(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing One-Time Product Canceled Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessVoidedSubscription(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Voided Subscription Event")
+	return nil
+}
+
+func (s *rtdnService) ProcessVoidedOneTimePurchase(event models.GooglePlayWebhookEvent) error {
+	log.Println("🔹 Processing Voided One-Time Purchase Event")
 	return nil
 }

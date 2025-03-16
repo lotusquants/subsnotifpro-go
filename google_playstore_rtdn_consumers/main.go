@@ -9,6 +9,8 @@ import (
 
 	"subsnotifpro-go/database"
 	"subsnotifpro-go/internal/google_playstore/rtdn/queue"
+	rtdnRepo "subsnotifpro-go/internal/google_playstore/rtdn/repository"
+	rtdnService "subsnotifpro-go/internal/google_playstore/rtdn/service"
 	"subsnotifpro-go/internal/messaging"
 )
 
@@ -25,12 +27,21 @@ func main() {
 	}
 	defer messaging.CloseRabbitMQ() // Ensure RabbitMQ is closed when done
 
-	// ✅ Initialize the database for the consumer (No return value)
-	database.ConnectDatabase()     // Establish DB connection (doesn't return anything)
-	defer database.CloseDatabase() // Ensure DB connection is closed when done
+	// ✅ Initialize database and pass to repositories
+	db, err := database.ConnectDatabase()
+	if err != nil {
+		log.Fatalf("❌ Database connection failed: %v", err)
+	}
+	defer database.CloseDatabase(db)
 
-	// ✅ Start the consumer with the channel
-	go queue.StartQueueConsumer(ctx, ch)
+	// ✅ Initialize the repositories and services
+	rtdnRepo := rtdnRepo.NewRTDNRepository(db)               // Adjust according to your repo
+	rtdnService := rtdnService.NewRTDNService(ctx, rtdnRepo) // Adjust according to your service
+
+	// ✅ Create and start the consumer
+	consumer := queue.NewConsumer(ch, rtdnRepo, rtdnService)
+	go consumer.Start(ctx)
+
 	go queue.StartDLQConsumer(ctx, ch)
 
 	// ✅ Handle OS signals for graceful shutdown

@@ -102,3 +102,6 @@ const (
 	// Max batch size for processing events
 	EventBatchSize = 100
 )
+
+const DEFAULT_SYNC_BATCH_SIZE = 200
+const MAX_ROWS_PER_TRANSACTION = 1000

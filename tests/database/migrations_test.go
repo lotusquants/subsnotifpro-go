@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"subsnotifpro-go/database"
-	"subsnotifpro-go/models"
+	"subsnotifpro-go/internal/models"
 )
 
 // TestAutoMigration checks if tables are created after auto-migration

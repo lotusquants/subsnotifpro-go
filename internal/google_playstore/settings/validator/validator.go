@@ -1,4 +1,4 @@
-package playstoresettings
+package validator
 
 import (
 	"encoding/json"

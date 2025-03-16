@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
-	"subsnotifpro-go/internal/google_playstore/models"
+	"subsnotifpro-go/internal/google_playstore/rtdn/models"
 	"subsnotifpro-go/internal/logger"
 )
 
