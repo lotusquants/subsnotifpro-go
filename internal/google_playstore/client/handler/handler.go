@@ -26,10 +26,10 @@ func NewPlaystoreClientHandler(svc service.PlaystoreClientService) *PlaystoreCli
 
 // RegisterRoutes registers all subscription client-related routes.
 func RegisterClientRoutes(router *gin.RouterGroup, handler *PlaystoreClientHandler) {
-	router.GET("/get-user-subscription-purchase", handler.GetUserSubscriptionPurchase)
-	router.GET("/list-subscription-products", handler.ListSubscriptionProducts)
-	router.GET("/get-subscription-product-details", handler.GetSubscriptionProductDetails)
-	router.GET("/get-subscription-offers", handler.GetSubscriptionOffers)
+	router.GET("/fetch-user-subscription-purchase", handler.GetUserSubscriptionPurchase)
+	router.GET("/fetch-list-subscription-products", handler.ListSubscriptionProducts)
+	router.GET("/fetch-subscription-product-details", handler.GetSubscriptionProductDetails)
+	router.GET("/fetch-subscription-offers", handler.GetSubscriptionOffers)
 }
 
 // Regex for validating purchase tokens (alphanumeric, dashes, underscores)

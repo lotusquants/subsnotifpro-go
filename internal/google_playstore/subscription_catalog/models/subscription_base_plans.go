@@ -53,17 +53,7 @@ type BasePlanRegionalConfig struct {
 	BasePlanID                string `gorm:"primaryKey;size:50;not null" json:"base_plan_id"`
 	RegionCode                string `gorm:"primaryKey;size:3;not null;index" json:"region_code"`
 	NewSubscriberAvailability bool   `json:"new_subscriber_availability"`
-	Price                     Money  `gorm:"embedded" json:"price"`
-}
-
-// -------------------------
-// 🔹 MONEY STRUCT
-// -------------------------
-
-type Money struct {
-	CurrencyCode string `gorm:"size:3" json:"currency_code"`
-	Units        int64  `json:"units"`
-	Nanos        int32  `json:"nanos"`
+	Price                     Money  `gorm:"type:jsonb" json:"price"`
 }
 
 // -------------------------
@@ -82,12 +72,14 @@ type OfferTag struct {
 // -------------------------
 
 type OtherRegionsBasePlanConfig struct {
-	PackageName               string `gorm:"primaryKey;size:40;not null" json:"package_name"`
-	ProductID                 string `gorm:"primaryKey;size:50;not null" json:"product_id"`
-	BasePlanID                string `gorm:"primaryKey;size:50;not null" json:"base_plan_id"`
-	USDPrice                  Money  `gorm:"embedded" json:"usd_price"`
-	EURPrice                  Money  `gorm:"embedded" json:"eur_price"`
-	NewSubscriberAvailability bool   `json:"new_subscriber_availability"`
+	PackageName string `gorm:"primaryKey;size:40;not null" json:"package_name"`
+	ProductID   string `gorm:"primaryKey;size:50;not null" json:"product_id"`
+	BasePlanID  string `gorm:"primaryKey;size:50;not null" json:"base_plan_id"`
+
+	// ✅ Use Embedded Struct After Implementing Valuer/Scanner
+	USDPrice                  Money `gorm:"type:jsonb" json:"usdPrice"`
+	EURPrice                  Money `gorm:"type:jsonb" json:"eurPrice"`
+	NewSubscriberAvailability bool  `json:"new_subscriber_availability"`
 }
 
 // -------------------------

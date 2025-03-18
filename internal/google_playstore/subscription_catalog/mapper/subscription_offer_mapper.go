@@ -8,7 +8,7 @@ import (
 )
 
 // ConvertSubscriptionOfferModel converts a Google Play API SubscriptionOffer into an internal SubscriptionOffer model.
-func ConvertSubscriptionOfferModel(offer *androidpublisher.SubscriptionOffer, packageName, productID, basePlanID string) models.SubscriptionOffer {
+func ConvertSubscriptionOfferModel(offer *androidpublisher.SubscriptionOffer, packageName string, productID string, basePlanID string) models.SubscriptionOffer {
 	if offer == nil || offer.OfferId == "" {
 		log.Printf("⚠️ WARNING: Invalid Offer for Package: %s, Product: %s, BasePlan: %s", packageName, productID, basePlanID)
 		return models.SubscriptionOffer{}
@@ -16,8 +16,8 @@ func ConvertSubscriptionOfferModel(offer *androidpublisher.SubscriptionOffer, pa
 
 	// ✅ Convert Phases (Optimized slice allocation)
 	phases := make([]models.SubscriptionOfferPhase, 0, len(offer.Phases))
-	for _, phase := range offer.Phases {
-		phases = append(phases, convertSubscriptionOfferPhase(phase, packageName, productID, basePlanID, offer.OfferId))
+	for phaseIndex, phase := range offer.Phases {
+		phases = append(phases, convertSubscriptionOfferPhase(phase, packageName, productID, basePlanID, offer.OfferId, phaseIndex))
 	}
 
 	// ✅ Convert Targeting
@@ -44,7 +44,7 @@ func ConvertSubscriptionOfferModel(offer *androidpublisher.SubscriptionOffer, pa
 }
 
 // ✅ Convert Regional Subscription Offer Config
-func convertRegionalSubscriptionOfferConfig(regionalConfigs []*androidpublisher.RegionalSubscriptionOfferConfig, packageName, productID, basePlanID, offerID string) []models.RegionalSubscriptionOfferConfig {
+func convertRegionalSubscriptionOfferConfig(regionalConfigs []*androidpublisher.RegionalSubscriptionOfferConfig, packageName string, productID string, basePlanID string, offerID string) []models.RegionalSubscriptionOfferConfig {
 	if regionalConfigs == nil {
 		return nil
 	}
@@ -79,17 +79,17 @@ func convertOtherRegionsSubscriptionOfferConfig(config *androidpublisher.OtherRe
 }
 
 // Convert Subscription Offer Phase
-func convertSubscriptionOfferPhase(phase *androidpublisher.SubscriptionOfferPhase, packageName, productID, basePlanID, offerID string) models.SubscriptionOfferPhase {
+func convertSubscriptionOfferPhase(phase *androidpublisher.SubscriptionOfferPhase, packageName, productID, basePlanID, offerID string, phaseIndex int) models.SubscriptionOfferPhase {
 	if phase == nil {
 		log.Printf("⚠️ WARNING: Null Phase for Offer %s", offerID)
 		return models.SubscriptionOfferPhase{}
 	}
 
 	// ✅ Convert Regional Configs
-	regionalConfigs := convertRegionalSubscriptionOfferPhaseConfig(phase.RegionalConfigs, packageName, productID, basePlanID, offerID)
+	regionalConfigs := convertRegionalSubscriptionOfferPhaseConfig(phase.RegionalConfigs, packageName, productID, basePlanID, offerID, phaseIndex)
 
 	// ✅ Convert Other Regions Config
-	otherRegionsConfig := convertOtherRegionsSubscriptionOfferPhaseConfig(phase.OtherRegionsConfig, packageName, productID, basePlanID, offerID)
+	otherRegionsConfig := convertOtherRegionsSubscriptionOfferPhaseConfig(phase.OtherRegionsConfig, packageName, productID, basePlanID, offerID, phaseIndex)
 
 	// ✅ Return mapped phase model
 	return models.SubscriptionOfferPhase{
@@ -97,6 +97,7 @@ func convertSubscriptionOfferPhase(phase *androidpublisher.SubscriptionOfferPhas
 		ProductID:          productID,
 		BasePlanID:         basePlanID,
 		OfferID:            offerID,
+		PhaseIndex:         phaseIndex,
 		RecurrenceCount:    int(phase.RecurrenceCount),
 		Duration:           phase.Duration,
 		RegionalConfigs:    regionalConfigs,
@@ -105,7 +106,7 @@ func convertSubscriptionOfferPhase(phase *androidpublisher.SubscriptionOfferPhas
 }
 
 // ✅ Convert Regional Subscription Offer Phase Config
-func convertRegionalSubscriptionOfferPhaseConfig(regionalConfigs []*androidpublisher.RegionalSubscriptionOfferPhaseConfig, packageName, productID, basePlanID, offerID string) []models.RegionalSubscriptionOfferPhaseConfig {
+func convertRegionalSubscriptionOfferPhaseConfig(regionalConfigs []*androidpublisher.RegionalSubscriptionOfferPhaseConfig, packageName string, productID string, basePlanID string, offerID string, phaseIndex int) []models.RegionalSubscriptionOfferPhaseConfig {
 	if regionalConfigs == nil {
 		return nil
 	}
@@ -121,6 +122,7 @@ func convertRegionalSubscriptionOfferPhaseConfig(regionalConfigs []*androidpubli
 			ProductID:        productID,
 			BasePlanID:       basePlanID,
 			OfferID:          offerID,
+			PhaseIndex:       phaseIndex,
 			RegionCode:       region.RegionCode,
 			Price:            convertMoney(region.Price),
 			RelativeDiscount: safeRelativeDiscount(region.RelativeDiscount),
@@ -132,7 +134,7 @@ func convertRegionalSubscriptionOfferPhaseConfig(regionalConfigs []*androidpubli
 }
 
 // ✅ Convert Other Regions Subscription Offer Phase Config
-func convertOtherRegionsSubscriptionOfferPhaseConfig(config *androidpublisher.OtherRegionsSubscriptionOfferPhaseConfig, packageName, productID, basePlanID, offerID string) *models.OtherRegionsSubscriptionOfferPhaseConfig {
+func convertOtherRegionsSubscriptionOfferPhaseConfig(config *androidpublisher.OtherRegionsSubscriptionOfferPhaseConfig, packageName string, productID string, basePlanID string, offerID string, phaseIndex int) *models.OtherRegionsSubscriptionOfferPhaseConfig {
 	if config == nil {
 		return nil
 	}
@@ -142,15 +144,16 @@ func convertOtherRegionsSubscriptionOfferPhaseConfig(config *androidpublisher.Ot
 		ProductID:          productID,
 		BasePlanID:         basePlanID,
 		OfferID:            offerID,
+		PhaseIndex:         phaseIndex,
 		RelativeDiscount:   safeRelativeDiscount(config.RelativeDiscount),
 		Free:               config.Free != nil,
-		OtherRegionsPrices: convertOtherRegionsPrices(config.OtherRegionsPrices, packageName, productID, basePlanID, offerID),
-		AbsoluteDiscounts:  convertOtherRegionsPrices(config.AbsoluteDiscounts, packageName, productID, basePlanID, offerID),
+		OtherRegionsPrices: convertOtherRegionsPrices(config.OtherRegionsPrices, packageName, productID, basePlanID, offerID, phaseIndex),
+		AbsoluteDiscounts:  convertOtherRegionsPrices(config.AbsoluteDiscounts, packageName, productID, basePlanID, offerID, phaseIndex),
 	}
 }
 
 // ✅ Convert Other Regions Prices
-func convertOtherRegionsPrices(prices *androidpublisher.OtherRegionsSubscriptionOfferPhasePrices, packageName, productID, basePlanID, offerID string) *models.OtherRegionsSubscriptionOfferPhasePrices {
+func convertOtherRegionsPrices(prices *androidpublisher.OtherRegionsSubscriptionOfferPhasePrices, packageName string, productID string, basePlanID string, offerID string, phaseIndex int) *models.OtherRegionsSubscriptionOfferPhasePrices {
 	if prices == nil {
 		return nil
 	}
@@ -160,6 +163,7 @@ func convertOtherRegionsPrices(prices *androidpublisher.OtherRegionsSubscription
 		ProductID:   productID,
 		BasePlanID:  basePlanID,
 		OfferID:     offerID,
+		PhaseIndex:  phaseIndex,
 	}
 
 	// ✅ Map USD Price if available

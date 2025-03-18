@@ -210,3 +210,63 @@ It will handle subscription lifecycle events from Google Play Store and Apple Ap
 - Successfully ensured that the consumer logic is now independent, running on separate services without interfering with the HTTP server.
 - **Addressed** environment variable issues, ensuring proper loading of `.env` files for both services when run separately in different terminals.
 - **Verified** that consumers can be scaled independently using different service clusters for restb api and consumers for better scalability and performance.
+
+
+
+### ✅ **Step 17 - Enhance Subscription Catalog Module with Caching and Background Sync** - (2025-03-16)
+
+#### **Objective**
+Optimize the Subscription Catalog module by introducing caching and background syncing to improve performance and reduce redundant API calls.
+
+#### **Tasks:**
+- **Implement Caching:**
+  - Introduce an in-memory caching layer (e.g., Redis or Go’s built-in cache) for storing fetched subscription data.
+  - Set an expiration policy (e.g., **10 minutes**) to prevent excessive API requests.
+  - Ensure cache invalidation happens when new data is fetched or updated.
+
+- **Background Sync Mechanism:**
+  - Implement a **background task** that periodically syncs subscription catalog data.
+  - Use a Goroutine with `context.WithTimeout` to prevent long-running API calls from blocking execution.
+  - Add a **sync interval configuration** (e.g., via `.env` or config file).
+
+- **Optimize Database Operations:**
+  - Ensure bulk inserts and updates are handled efficiently.
+  - Implement **Upsert** logic to prevent redundant entries.
+  - Improve indexing on subscription catalog tables for faster queries.
+
+- **Improve Logging & Error Handling:**
+  - Standardize logging messages with **structured logging** (`logrus` or `zap`).
+  - Handle API failures gracefully and retry failed syncs with exponential backoff.
+  - Expose **health checks** for catalog sync status.
+
+  #### **Validation Steps:**
+  1. Run the subscription sync endpoint and verify that data is stored in cache before hitting the database.
+  2. Monitor API request logs to ensure redundant API calls are reduced.
+  3. Validate that expired cache triggers a fresh sync from the Play Store API.
+  4. Confirm that background sync runs periodically and updates the catalog data.
+
+  #### **Next Steps:**
+  - Implement metrics collection for subscription sync performance.
+  - Introduce WebSockets or Pub/Sub for real-time updates when subscription data changes.
+  - Evaluate caching mechanisms and determine if a distributed cache (e.g., Redis) is needed for scalability.
+
+  ## 🔄 [Subscription Pricing] Enhanced Offer Phase Pricing & Regional Discount Handling
+
+### ✅ **Implemented Regional Offer Phase Price Calculation**:
+  -  
+    - Supports **direct pricing**, **free phase handling**, and **discount application**.  
+    - Ensures **Google Play pricing constraints** are respected.  
+
+  - **Optimized Discount Calculations**  
+    - **Relative Discounts:** Prorated percentage-based deductions.  
+    - **Absolute Discounts:** Fixed amount deductions applied to base plan price.  
+    - **Ensured Price Validity:** Prevents discounts that reduce the price below the minimum allowed.  
+
+  - **Introduced Safe Money Subtraction Utility (`SubtractMoney`)**  
+    - Ensures nanos normalization, preventing negative pricing calculations.  
+    - Handles safe subtraction of discount amounts while maintaining correct units and nanos.  
+
+
+  - TODO : Implement and validate **Other Regions Offer Phase Pricing Calculation**.  
+  
+  

@@ -66,14 +66,15 @@ type SubscriptionOfferPhase struct {
 	ProductID   string `gorm:"primaryKey;size:50;not null" json:"productId"`
 	BasePlanID  string `gorm:"primaryKey;size:50;not null" json:"basePlanId"`
 	OfferID     string `gorm:"primaryKey;size:50;not null" json:"offerId"`
+	PhaseIndex  int    `gorm:"primaryKey;not null" json:"phaseIndex"` // ✅ Unique Identifier per Offer Phase
 
 	RecurrenceCount int `gorm:"not null;check:recurrence_count > 0" json:"recurrenceCount"`
 
 	Duration string `gorm:"size:20;not null" json:"duration"` // ISO 8601 Format (e.g., P1M for 1 month)
 
 	// ✅ Relations with Full Cascade (Delete + Update)
-	RegionalConfigs    []RegionalSubscriptionOfferPhaseConfig    `gorm:"foreignKey:PackageName,ProductID,BasePlanID,OfferID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE;" json:"regionalConfigs"`
-	OtherRegionsConfig *OtherRegionsSubscriptionOfferPhaseConfig `gorm:"foreignKey:PackageName,ProductID,BasePlanID,OfferID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE;" json:"otherRegionsConfig,omitempty"`
+	RegionalConfigs    []RegionalSubscriptionOfferPhaseConfig    `gorm:"foreignKey:PackageName,ProductID,BasePlanID,OfferID,PhaseIndex;constraint:OnDelete:CASCADE,OnUpdate:CASCADE;" json:"regionalConfigs"`
+	OtherRegionsConfig *OtherRegionsSubscriptionOfferPhaseConfig `gorm:"foreignKey:PackageName,ProductID,BasePlanID,OfferID,PhaseIndex;constraint:OnDelete:CASCADE,OnUpdate:CASCADE;" json:"otherRegionsConfig,omitempty"`
 }
 
 // -------------------------
@@ -85,13 +86,14 @@ type RegionalSubscriptionOfferPhaseConfig struct {
 	ProductID   string `gorm:"primaryKey;size:50;not null" json:"productId"`
 	BasePlanID  string `gorm:"primaryKey;size:50;not null" json:"basePlanId"`
 	OfferID     string `gorm:"primaryKey;size:50;not null" json:"offerId"`
+	PhaseIndex  int    `gorm:"primaryKey;not null" json:"phaseIndex"` // ✅ Unique Identifier per Offer Phase
 
 	RegionCode string `gorm:"primaryKey;size:3;not null" json:"regionCode"` // Standardized region codes (ISO)
 
 	// ✅ Pricing Override Fields (Only one can be set)
-	Price            *Money   `gorm:"embedded;default:null" json:"price,omitempty"`
+	Price            *Money   `gorm:"type:jsonb;default:null" json:"price,omitempty"`
 	RelativeDiscount *float64 `gorm:"default:null" json:"relativeDiscount,omitempty"`
-	AbsoluteDiscount *Money   `gorm:"embedded;default:null" json:"absoluteDiscount,omitempty"`
+	AbsoluteDiscount *Money   `gorm:"type:jsonb;default:null" json:"absoluteDiscount,omitempty"`
 	Free             bool     `gorm:"not null;default:false" json:"free"`
 }
 
@@ -104,13 +106,14 @@ type OtherRegionsSubscriptionOfferPhaseConfig struct {
 	ProductID   string `gorm:"primaryKey;size:50;not null" json:"productId"`
 	BasePlanID  string `gorm:"primaryKey;size:50;not null" json:"basePlanId"`
 	OfferID     string `gorm:"primaryKey;size:50;not null" json:"offerId"`
+	PhaseIndex  int    `gorm:"primaryKey;not null" json:"phaseIndex"` // ✅ Unique Identifier per Offer Phase
 
 	// ✅ Pricing Overrides
-	OtherRegionsPrices *OtherRegionsSubscriptionOfferPhasePrices `gorm:"foreignKey:PackageName,ProductID,BasePlanID,OfferID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE;" json:"otherRegionsPrices,omitempty"`
+	OtherRegionsPrices *OtherRegionsSubscriptionOfferPhasePrices `gorm:"foreignKey:PackageName,ProductID,BasePlanID,OfferID,PhaseIndex;constraint:OnDelete:CASCADE,OnUpdate:CASCADE;" json:"otherRegionsPrices,omitempty"`
 
 	RelativeDiscount *float64 `gorm:"default:null" json:"relativeDiscount,omitempty"`
 
-	AbsoluteDiscounts *OtherRegionsSubscriptionOfferPhasePrices `gorm:"foreignKey:PackageName,ProductID,BasePlanID,OfferID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE;" json:"absoluteDiscounts,omitempty"`
+	AbsoluteDiscounts *OtherRegionsSubscriptionOfferPhasePrices `gorm:"foreignKey:PackageName,ProductID,BasePlanID,OfferID,PhaseIndex;constraint:OnDelete:CASCADE,OnUpdate:CASCADE;" json:"absoluteDiscounts,omitempty"`
 
 	Free bool `gorm:"not null;default:false" json:"free"`
 }
@@ -124,10 +127,12 @@ type OtherRegionsSubscriptionOfferPhasePrices struct {
 	ProductID   string `gorm:"primaryKey;size:50;not null" json:"productId"`
 	BasePlanID  string `gorm:"primaryKey;size:50;not null" json:"basePlanId"`
 	OfferID     string `gorm:"primaryKey;size:50;not null" json:"offerId"`
+	PhaseIndex  int    `gorm:"primaryKey;not null" json:"phaseIndex"` // ✅ Unique Identifier per Offer Phase
 
 	// ✅ Pricing Fields
-	USDPrice Money `gorm:"embedded" json:"usdPrice"`
-	EURPrice Money `gorm:"embedded" json:"eurPrice"`
+	// ✅ Use Embedded Struct After Implementing Valuer/Scanner
+	USDPrice Money `gorm:"type:jsonb" json:"usdPrice"`
+	EURPrice Money `gorm:"type:jsonb" json:"eurPrice"`
 }
 
 // -------------------------
