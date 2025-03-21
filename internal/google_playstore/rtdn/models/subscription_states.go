@@ -21,10 +21,10 @@ const (
 	SubscriptionStatePendingPurchaseCanceled SubscriptionState = "SUBSCRIPTION_STATE_PENDING_PURCHASE_CANCELED"
 )
 
-// SubscriptionState represents a single subscription state
+// SubscriptionStateModel represents a unique subscription state
 type SubscriptionStateModel struct {
-	ID    uuid.UUID         `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	State SubscriptionState `gorm:"type:varchar(50);not null;unique"`
+	ID    uint              `gorm:"primaryKey;autoIncrement"`               // 🔥 Use Integer for Faster Queries
+	State SubscriptionState `gorm:"type:varchar(50);not null;unique;index"` // Ensure Unique & Indexed
 }
 
 // SubscriptionStateTransitionHistory used for tracking subscription state changes over time
@@ -111,19 +111,4 @@ var SubscriptionStateDetailsMap = map[SubscriptionState]SubscriptionStateDetails
 		RequiresAction:   false,
 		DeveloperMessage: "No action required, but user may retry purchase.",
 	},
-}
-
-// GetSubscriptionDetails returns detailed information about a subscription state
-func GetSubscriptionDetails(state SubscriptionState) SubscriptionStateDetails {
-	if details, exists := SubscriptionStateDetailsMap[state]; exists {
-		return details
-	}
-	// If state is not found, return default details (Unknown state)
-	return SubscriptionStateDetails{
-		HasAccess:        false,
-		ShortDescription: "Unknown subscription state.",
-		FullDescription:  "Unexpected state. This should not happen in production.",
-		RequiresAction:   false,
-		DeveloperMessage: "Investigate this case.",
-	}
 }

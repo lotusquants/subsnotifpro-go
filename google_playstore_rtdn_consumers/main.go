@@ -7,10 +7,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"subsnotifpro-go/database"
+	"subsnotifpro-go/internal/database"
+	clientService "subsnotifpro-go/internal/google_playstore/client/service"
 	"subsnotifpro-go/internal/google_playstore/rtdn/queue"
 	rtdnRepo "subsnotifpro-go/internal/google_playstore/rtdn/repository"
 	rtdnService "subsnotifpro-go/internal/google_playstore/rtdn/service"
+	settingsRepo "subsnotifpro-go/internal/google_playstore/settings/repository"
 	"subsnotifpro-go/internal/messaging"
 )
 
@@ -34,9 +36,12 @@ func main() {
 	}
 	defer database.CloseDatabase(db)
 
+	settingsRepo := settingsRepo.NewPlaystoreSettingsRepository()
+	clientService := clientService.NewGooglePlayClientService(ctx, settingsRepo, db)
+
 	// ✅ Initialize the repositories and services
-	rtdnRepo := rtdnRepo.NewRTDNRepository(db)               // Adjust according to your repo
-	rtdnService := rtdnService.NewRTDNService(ctx, rtdnRepo) // Adjust according to your service
+	rtdnRepo := rtdnRepo.NewRTDNRepository(db)                              // Adjust according to your repo
+	rtdnService := rtdnService.NewRTDNService(ctx, rtdnRepo, clientService) // Adjust according to your service
 
 	// ✅ Create and start the consumer
 	consumer := queue.NewConsumer(ch, rtdnRepo, rtdnService)

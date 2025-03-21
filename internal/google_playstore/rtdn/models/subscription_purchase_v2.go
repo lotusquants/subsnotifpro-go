@@ -19,7 +19,7 @@ const (
 type SubscriptionPurchaseV2 struct {
 	ID                          string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 	Kind                        string    `gorm:"type:varchar(50);not null"`
-	UserID                      uuid.UUID `gorm:"type:uuid;not null;index;constraint:OnDelete:CASCADE"`
+	AppUserID                   uuid.UUID `gorm:"type:uuid;not null;index;constraint:OnDelete:CASCADE"`
 	RegionCodeID                uuid.UUID `gorm:"type:uuid;not null;index"`
 	SubscriptionStateModelID    uuid.UUID `gorm:"type:uuid;not null;index"`
 	AcknowledgementStateModelID uuid.UUID `gorm:"type:uuid;not null;index"`
@@ -33,10 +33,25 @@ type SubscriptionPurchaseV2 struct {
 	PrepaidPlanID      *uuid.UUID `gorm:"type:uuid;null;index;constraint:OnDelete:SET NULL"`
 
 	StartTime           time.Time `gorm:"not null;index"`
-	LatestOrderID       string    `gorm:"type:varchar(50);not null;unique"`
+	LatestOrderId       string    `gorm:"type:varchar(50);not null;unique"`
 	LinkedPurchaseToken string    `gorm:"type:varchar(255);not null;index"`
 
 	CreatedAt time.Time      `gorm:"autoCreateTime;index"`
 	UpdatedAt time.Time      `gorm:"autoUpdateTime"`
 	DeletedAt gorm.DeletedAt `gorm:"index"`
+}
+
+// SubscriptionOrderHistory tracks the order history of a subscription
+type SubscriptionOrderIdTransitionHistory struct {
+	ID             uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	SubscriptionID uuid.UUID `gorm:"type:uuid;not null;index;constraint:OnDelete:CASCADE"`
+	OrderID        string    `gorm:"type:varchar(50);not null;index;unique"` // Google Play Order ID
+
+	OrderType string `gorm:"type:varchar(50);not null;index"`
+
+	// 🔹 Metadata
+	PurchaseToken string    `gorm:"type:varchar(255);not null;index"` // Purchase Token
+	PurchaseTime  time.Time `gorm:"not null;index"`                   // When this order was created
+
+	CreatedAt time.Time `gorm:"autoCreateTime"`
 }

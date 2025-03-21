@@ -4,7 +4,7 @@ import "time"
 
 type GoogleAccount struct {
 	ID                          string `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	UserID                      string `gorm:"type:uuid;index"`            // Foreign key to the User model
+	AppUserID                   string `gorm:"type:uuid;index"`            // Foreign key to the User model
 	ExternalAccountID           string `gorm:"type:varchar(100);not null"` // Google External Account ID
 	ObfuscatedExternalAccountID string `gorm:"type:varchar(100);not null"` // Obfuscated Google External Account ID
 	ObfuscatedExternalProfileID string `gorm:"type:varchar(100);not null"` // Obfuscated Profile ID

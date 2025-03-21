@@ -3,13 +3,17 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
 	"subsnotifpro-go/internal/constants"
 	"subsnotifpro-go/internal/google_playstore/rtdn/models"
 	"subsnotifpro-go/internal/google_playstore/rtdn/repository"
+	"subsnotifpro-go/internal/logger"
 	"subsnotifpro-go/internal/metrics"
+
+	clientService "subsnotifpro-go/internal/google_playstore/client/service"
 )
 
 // RTDNService defines an interface for RTDN service methods
@@ -43,8 +47,9 @@ type RTDNService interface {
 
 // rtdnService implements the RTDNService interface
 type rtdnService struct {
-	repo repository.RTDNRepository
-	ctx  context.Context
+	repo          repository.RTDNRepository
+	ctx           context.Context
+	clientService clientService.PlaystoreClientService
 
 	// Handler maps
 	subscriptionHandlers   map[int]func(models.GooglePlayWebhookEvent) error
@@ -53,8 +58,8 @@ type rtdnService struct {
 }
 
 // NewRTDNService creates a new instance of RTDNService
-func NewRTDNService(ctx context.Context, repo repository.RTDNRepository) RTDNService {
-	service := &rtdnService{repo: repo, ctx: ctx}
+func NewRTDNService(ctx context.Context, repo repository.RTDNRepository, clientService clientService.PlaystoreClientService) RTDNService {
+	service := &rtdnService{repo: repo, ctx: ctx, clientService: clientService}
 
 	// Initialize handler maps with instance methods
 	service.subscriptionHandlers = map[int]func(models.GooglePlayWebhookEvent) error{
@@ -95,6 +100,7 @@ func (s *rtdnService) SaveWebhookEvent(event *models.GooglePlayWebhookEvent) err
 
 // ProcessWebhookEvent routes Google Play webhook events based on event type
 func (s *rtdnService) ProcessWebhookEvent(event models.GooglePlayWebhookEvent) error {
+
 	startTime := time.Now()
 	var err error
 
@@ -150,7 +156,31 @@ func (s *rtdnService) ProcessVoidedPurchaseEvent(event models.GooglePlayWebhookE
 
 func (s *rtdnService) ProcessSubscriptionPurchased(event models.GooglePlayWebhookEvent) error {
 	log.Println("🔹 Processing Subscription Purchased Event")
+	logger.Log.Info("🔹 Processing Subscription Purchased Event")
+
+	subscriptionNotification := event.SubscriptionNotification
+	if subscriptionNotification == nil {
+		return fmt.Errorf("missing subscription notification data")
+	}
+
+	// 🔹 Extract Subscription Details
+	purchaseToken := subscriptionNotification.PurchaseToken
+	subscriptionId := subscriptionNotification.SubscriptionID
+	packageName := event.PackageName
+
+	if purchaseToken == "" || subscriptionId == "" {
+		return fmt.Errorf("invalid subscription event: missing purchaseToken or subscriptionId")
+	}
+
+	// 🔹 Fetch Subscription Data from Google Play API
+	subscriptionData, err := s.clientService.GetUserSubscriptionPurchase(purchaseToken, packageName)
+	if err != nil {
+		return fmt.Errorf("failed to fetch subscription purchase data: %w", err)
+	}
+
+	logger.Log.Infof("✅ Subscription processed successfully for purchase token %s", subscriptionData.LinkedPurchaseToken)
 	return nil
+
 }
 
 func (s *rtdnService) ProcessSubscriptionRenewed(event models.GooglePlayWebhookEvent) error {

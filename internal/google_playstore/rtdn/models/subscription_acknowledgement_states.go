@@ -17,7 +17,7 @@ const (
 
 // AcknowledgementStateModel represents a single acknowledgement state
 type AcknowledgementStateModel struct {
-	ID    uuid.UUID            `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	ID    uint                 `gorm:"primaryKey;autoIncrement"`
 	State AcknowledgementState `gorm:"type:varchar(50);not null;unique"`
 }
 

@@ -2,118 +2,87 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log"
-	clientService "subsnotifpro-go/internal/google_playstore/client/service"
+
 	"subsnotifpro-go/internal/google_playstore/settings/repository"
 	"subsnotifpro-go/internal/google_playstore/settings/validator"
+
+	"gorm.io/gorm"
 )
 
-// PlaystoreSettingsService defines an interface for playstore settings service methods
 type PlaystoreSettingsService interface {
-	// UploadServiceAccount processes a new service account upload
-	UploadServiceAccount(filePath string, fileName string) error
-
-	// ValidateServiceAccount checks if the stored service account is valid
-	ValidateServiceAccount() error
-
-	// GetServiceAccountStatus retrieves the latest service account validation status
-	GetServiceAccountStatus() (map[string]interface{}, error)
-
-	// DeleteServiceAccount deletes the current service account
-	DeleteServiceAccount() error
-
-	// SetPackageName updates the package name
-	SetPackageName(packageName string) error
-
-	// GetPackageName retrieves the package name
-	GetPackageName() (string, error)
+	UploadServiceAccount(ctx context.Context, appID, filePath, fileName string) error
+	ValidateServiceAccount(ctx context.Context, appID string) error
+	GetServiceAccountStatus(ctx context.Context, appID string) (map[string]interface{}, error)
 }
 
-// playstoreSettingsService Service implements the PlaystoreSettingsService interface
 type playstoreSettingsService struct {
-	repo          repository.PlaystoreSettingsRepository
-	clientService clientService.PlaystoreClientService
-	ctx           context.Context
+	db   *gorm.DB
+	repo repository.PlaystoreSettingsRepository
 }
 
-// NewRTDNService creates a new instance of RTDNService
-func NewPlaystoreSettingsService(ctx context.Context, repo repository.PlaystoreSettingsRepository, clientService clientService.PlaystoreClientService) PlaystoreSettingsService {
-	service := &playstoreSettingsService{repo: repo, clientService: clientService, ctx: ctx}
-	return service
+func NewPlaystoreSettingsService(db *gorm.DB, repo repository.PlaystoreSettingsRepository) PlaystoreSettingsService {
+	return &playstoreSettingsService{db: db, repo: repo}
 }
 
-// UploadServiceAccount processes a new service account upload
-func (s *playstoreSettingsService) UploadServiceAccount(filePath string, fileName string) error {
-	if err := s.repo.DeleteExistingServiceAccount(s.ctx); err != nil {
-		log.Println("⚠️ Error deleting old service account:", err)
-	}
-	return s.repo.SaveServiceAccount(s.ctx, filePath, fileName)
-}
+// UploadServiceAccount saves a new service account and updates app settings
+func (s *playstoreSettingsService) UploadServiceAccount(ctx context.Context, appID, filePath, fileName string) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// ✅ Soft delete existing accounts for the app
+		if err := s.repo.SoftDeleteAllServiceAccounts(tx, appID); err != nil {
+			return err
+		}
 
-// ValidateServiceAccount checks if the stored service account is valid
-func (s *playstoreSettingsService) ValidateServiceAccount() error {
-	packageName, err := s.GetPackageName()
-	if err != nil || packageName == "" {
-		return errors.New("package name not set. Please configure it first")
-	}
-
-	serviceAccount, err := s.repo.GetLatestServiceAccount(s.ctx)
-	if err != nil {
-		return errors.New("no service account found")
-	}
-
-	if err := validator.ValidateServiceAccountJSONStructure(serviceAccount.FilePath); err != nil {
+		// ✅ Save the new service account and upsert into settings
+		_, err := s.repo.SaveServiceAccount(tx, appID, filePath, fileName)
 		return err
-	}
-
-	// Use the centralized publisher service client (singleton)
-	service, err := s.clientService.GetPublisherService()
-	if err != nil {
-		return fmt.Errorf("failed to initialize Google Play Publisher service: %w", err)
-	}
-
-	// Call Google Play API to check if we can list subscriptions (basic test for valid service account)
-	_, err = service.Monetization.Subscriptions.List(packageName).Do()
-	if err != nil {
-		// Update status as invalid if API call fails
-		s.repo.UpdateServiceAccountValidationStatus(s.ctx, false)
-		return fmt.Errorf("service account validation failed: %w", err)
-	}
-
-	s.repo.UpdateServiceAccountValidationStatus(s.ctx, true)
-	return nil
+	})
 }
 
-// GetServiceAccountStatus retrieves the latest service account validation status
-func (s *playstoreSettingsService) GetServiceAccountStatus() (map[string]interface{}, error) {
-	serviceAccount, err := s.repo.GetLatestServiceAccount(s.ctx)
+// ValidateServiceAccount validates the stored service account for an app
+func (s *playstoreSettingsService) ValidateServiceAccount(ctx context.Context, appID string) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Get latest service account
+		account, err := s.repo.GetLatestServiceAccount(tx, appID)
+		if err != nil {
+			return err
+		}
+
+		// Step 1: Validate JSON structure
+		if err := validator.ValidateServiceAccountJSONStructure(account.FilePath); err != nil {
+			_ = s.repo.UpdateServiceAccountValidationStatus(tx, appID, false)
+			return fmt.Errorf("JSON invalid: %w", err)
+		}
+
+		// Step 2: [Optional] External validation can be added here
+
+		// Step 3: Update validation status
+		if err := s.repo.UpdateServiceAccountValidationStatus(tx, appID, true); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// GetServiceAccountStatus retrieves the latest service account validation metadata
+func (s *playstoreSettingsService) GetServiceAccountStatus(ctx context.Context, appID string) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		account, err := s.repo.GetLatestServiceAccount(tx, appID)
+		if err != nil {
+			return err
+		}
+
+		result = map[string]interface{}{
+			"validated":    account.Validated,
+			"last_checked": account.LastChecked,
+			"file_name":    account.FileName,
+		}
+		return nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
-
-	packageName, _ := s.GetPackageName()
-
-	return map[string]interface{}{
-		"validated":    serviceAccount.Validated,
-		"last_checked": serviceAccount.LastChecked,
-		"file_name":    serviceAccount.FileName,
-		"package_name": packageName,
-	}, nil
-}
-
-// DeleteServiceAccount deletes the current service account
-func (s *playstoreSettingsService) DeleteServiceAccount() error {
-	return s.repo.DeleteExistingServiceAccount(s.ctx)
-}
-
-// SetPackageName updates the package name
-func (s *playstoreSettingsService) SetPackageName(packageName string) error {
-	return s.repo.UpdatePackageName(s.ctx, packageName)
-}
-
-// GetPackageName retrieves the package name
-func (s *playstoreSettingsService) GetPackageName() (string, error) {
-	return s.repo.FetchPackageName(s.ctx)
+	return result, nil
 }

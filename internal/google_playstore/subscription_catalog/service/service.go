@@ -28,9 +28,11 @@ type SubscriptionCatalogService interface {
 	ListBasePlanNames(packageName, productID string) ([]string, error)
 	GetRegionalBasePlanPrice(packageName, productID, basePlanID, regionCode string) (*models.Money, error)
 	GetOtherRegionsBasePlanPrice(packageName, productID, basePlanID, currency string) (*models.Money, error)
+	
 	GetSubscriptionOffer(packageName, productID, basePlanID, offerID string) (*models.SubscriptionOffer, error)
 	ListOfferNamesForBasePlan(packageName, productID, basePlanID string) ([]string, error)
 	IsSubscriptionOfferActive(packageName, productID, basePlanID, offerID string) (bool, error)
+	CheckSubscriptionOfferAvailabilityInRegion(packageName, productID, basePlanID, offerID, regionCode string) (bool, error)
 
 	GetOfferPhases(packageName, productID, basePlanID, offerID string) ([]models.SubscriptionOfferPhase, error)
 	IsOfferPhaseExists(packageName, productID, basePlanID, offerID string) (bool, error)
@@ -277,6 +279,13 @@ func (s *subscriptionCatalogService) IsSubscriptionOfferActive(packageName, prod
 		return false, fmt.Errorf("failed to check if offer is active: %w", err)
 	}
 	return isActive, nil
+}
+
+// ✅ CheckOfferAvailabilityInRegion - Service function to check if an offer is available in a region
+func (s *subscriptionCatalogService) CheckSubscriptionOfferAvailabilityInRegion(
+	packageName, productID, basePlanID, offerID, regionCode string,
+) (bool, error) {
+	return s.repo.IsSubscriptionOfferAvailableInRegion(s.ctx, packageName, productID, basePlanID, offerID, regionCode)
 }
 
 // ✅ Service Function to Get Offer Names for a Base Plan

@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-type User struct {
+type AppUser struct {
 	ID             string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 	AppUserID      string    `gorm:"type:varchar(100);not null;unique"` // The unique identifier for the user across all platforms
 	ActivePlatform string    `gorm:"type:varchar(50);not null"`         // Active platform (Google, Apple, etc.)
@@ -19,7 +19,7 @@ type User struct {
 	// You can extend it for other platforms (e.g., Stripe, Facebook, etc.)
 }
 
-type UserPlatformChange struct {
+type AppUserPlatformChange struct {
 	ID          string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 	UserID      string    `gorm:"type:uuid;index"`           // Link to the User
 	OldPlatform string    `gorm:"type:varchar(50);not null"` // Previous platform (e.g., "Google", "Apple")

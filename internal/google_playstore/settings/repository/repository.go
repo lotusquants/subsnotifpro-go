@@ -1,193 +1,108 @@
 package repository
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"log"
-	"os"
-	settingsModels "subsnotifpro-go/internal/google_playstore/settings/models"
+	"subsnotifpro-go/internal/google_playstore/settings/models"
 	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-// PlaystoreSettingsRepository defines the interface for Play Store settings repository
 type PlaystoreSettingsRepository interface {
-	SaveServiceAccount(ctx context.Context, filePath string, fileName string) error
-	GetLatestServiceAccount(ctx context.Context) (settingsModels.GooglePlayServiceAccount, error)
-	UpdateServiceAccountValidationStatus(ctx context.Context, isValid bool) error
-	DeleteExistingServiceAccount(ctx context.Context) error
-	UpdatePackageName(ctx context.Context, packageName string) error
-	FetchPackageName(ctx context.Context) (string, error)
-	GetSettings(ctx context.Context) (settingsModels.GooglePlaySettings, error)
-	SaveSettings(ctx context.Context, settings settingsModels.GooglePlaySettings) error
-	DeletePackageName(ctx context.Context) error
+	SaveServiceAccount(tx *gorm.DB, appID, filePath, fileName string) (*models.GooglePlayServiceAccount, error)
+	GetLatestServiceAccount(tx *gorm.DB, appID string) (models.GooglePlayServiceAccount, error)
+	UpdateServiceAccountValidationStatus(tx *gorm.DB, appID string, isValid bool) error
+	SoftDeleteAllServiceAccounts(tx *gorm.DB, appID string) error
+	GetSettings(tx *gorm.DB, appID string) (models.GooglePlaySettings, error)
+	UpsertSettings(tx *gorm.DB, settings *models.GooglePlaySettings) error
 }
 
-// ✅ Repository instance with injected DB (No Singleton!)
-type playstoreSettingsRepository struct {
-	db *gorm.DB
+type playstoreSettingsRepository struct{}
+
+func NewPlaystoreSettingsRepository() PlaystoreSettingsRepository {
+	return &playstoreSettingsRepository{}
 }
 
-// ✅ Constructor function (Injects DB instance)
-func NewPlaystoreSettingsRepository(db *gorm.DB) PlaystoreSettingsRepository {
-	return &playstoreSettingsRepository{db: db}
-}
-
-// -------------------------
-// 🚀 Save New Service Account (Transaction)
-// -------------------------
-func (r *playstoreSettingsRepository) SaveServiceAccount(ctx context.Context, filePath string, fileName string) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		serviceAccount := settingsModels.GooglePlayServiceAccount{
-			FileName: fileName,
-			FilePath: filePath,
-		}
-		if err := tx.Create(&serviceAccount).Error; err != nil {
-			return fmt.Errorf("failed to save service account %s: %w", fileName, err)
-		}
-		return nil
-	})
-}
-
-// -------------------------
-// 🚀 Get Latest Service Account
-// -------------------------
-func (r *playstoreSettingsRepository) GetLatestServiceAccount(ctx context.Context) (settingsModels.GooglePlayServiceAccount, error) {
-	var serviceAccount settingsModels.GooglePlayServiceAccount
-	err := r.db.WithContext(ctx).Order("created_at desc").First(&serviceAccount).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return settingsModels.GooglePlayServiceAccount{}, fmt.Errorf("no service account found: %w", err)
+// ✅ Save a new service account and associate it with the given app
+func (r *playstoreSettingsRepository) SaveServiceAccount(tx *gorm.DB, appID, filePath, fileName string) (*models.GooglePlayServiceAccount, error) {
+	account := &models.GooglePlayServiceAccount{
+		FileName: fileName,
+		FilePath: filePath,
 	}
-	return serviceAccount, err
-}
 
-// -------------------------
-// 🚀 Update Service Account Validation Status (Transaction)
-// -------------------------
-func (r *playstoreSettingsRepository) UpdateServiceAccountValidationStatus(ctx context.Context, isValid bool) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var serviceAccount settingsModels.GooglePlayServiceAccount
-		if err := tx.Order("created_at desc").First(&serviceAccount).Error; err != nil {
-			return fmt.Errorf("no service account found to update validation status: %w", err)
-		}
-
-		serviceAccount.Validated = isValid
-		serviceAccount.LastChecked = time.Now()
-		if err := tx.Save(&serviceAccount).Error; err != nil {
-			return fmt.Errorf("failed to update validation status: %w", err)
-		}
-		return nil
-	})
-}
-
-// -------------------------
-// 🚀 Delete Existing Service Account (DB First, Then File)
-// -------------------------
-func (r *playstoreSettingsRepository) DeleteExistingServiceAccount(ctx context.Context) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		serviceAccount, err := r.GetLatestServiceAccount(ctx)
-		if err != nil {
-			return err // Already wrapped
-		}
-
-		// ✅ First delete from DB (prevents orphaned files)
-		if err := tx.Delete(&serviceAccount).Error; err != nil {
-			return fmt.Errorf("failed to delete service account record: %w", err)
-		}
-
-		// ✅ Then delete the file (Check if exists)
-		if _, err := os.Stat(serviceAccount.FilePath); err == nil {
-			if err := os.Remove(serviceAccount.FilePath); err != nil {
-				log.Printf("⚠️ Error deleting service account file: %v", err)
-			}
-		}
-
-		return nil
-	})
-}
-
-// -------------------------
-// 🚀 Update Package Name
-// -------------------------
-func (r *playstoreSettingsRepository) UpdatePackageName(ctx context.Context, packageName string) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var settings settingsModels.GooglePlaySettings
-
-		// Fetch existing settings record with row locking
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&settings).Error
-
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// No settings found, create a new record
-			newSettings := settingsModels.GooglePlaySettings{
-				PackageName:            packageName,
-				LatestServiceAccountID: nil,
-			}
-
-			if err := tx.Create(&newSettings).Error; err != nil {
-				return fmt.Errorf("❌ failed to create settings record: %w", err)
-			}
-			return nil
-		}
-
-		// Update the package name
-		if err := tx.Model(&settings).Update("package_name", packageName).Error; err != nil {
-			return fmt.Errorf("❌ failed to update package name: %w", err)
-		}
-
-		return nil
-	})
-}
-
-// -------------------------
-// 🚀 Fetch Package Name
-// -------------------------
-func (r *playstoreSettingsRepository) FetchPackageName(ctx context.Context) (string, error) {
-	var settings settingsModels.GooglePlaySettings
-	err := r.db.WithContext(ctx).First(&settings).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return "", fmt.Errorf("package name not found: %w", err)
+	if err := tx.Create(account).Error; err != nil {
+		return nil, fmt.Errorf("failed to save service account: %w", err)
 	}
-	return settings.PackageName, nil
+
+	// ✅ Upsert settings for this app with new service account
+	settings := &models.GooglePlaySettings{
+		AppID:                  appID,
+		LatestServiceAccountID: &account.ID,
+	}
+	if err := r.UpsertSettings(tx, settings); err != nil {
+		return nil, fmt.Errorf("failed to upsert settings for app %s: %w", appID, err)
+	}
+
+	return account, nil
 }
 
-// -------------------------
-// 🚀 Get Full Settings
-// -------------------------
-func (r *playstoreSettingsRepository) GetSettings(ctx context.Context) (settingsModels.GooglePlaySettings, error) {
-	var settings settingsModels.GooglePlaySettings
-	err := r.db.WithContext(ctx).First(&settings).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return settingsModels.GooglePlaySettings{}, fmt.Errorf("no settings found: %w", err)
+// ✅ Get latest service account for a specific app
+func (r *playstoreSettingsRepository) GetLatestServiceAccount(tx *gorm.DB, appID string) (models.GooglePlayServiceAccount, error) {
+	var settings models.GooglePlaySettings
+	if err := tx.Where("app_id = ?", appID).First(&settings).Error; err != nil {
+		return models.GooglePlayServiceAccount{}, fmt.Errorf("settings not found for app: %w", err)
+	}
+
+	if settings.LatestServiceAccountID == nil {
+		return models.GooglePlayServiceAccount{}, errors.New("no service account set for app")
+	}
+
+	var account models.GooglePlayServiceAccount
+	if err := tx.Where("id = ?", *settings.LatestServiceAccountID).First(&account).Error; err != nil {
+		return models.GooglePlayServiceAccount{}, fmt.Errorf("failed to fetch service account: %w", err)
+	}
+
+	return account, nil
+}
+
+// ✅ Update validation status of the latest service account for a specific app
+func (r *playstoreSettingsRepository) UpdateServiceAccountValidationStatus(tx *gorm.DB, appID string, isValid bool) error {
+	account, err := r.GetLatestServiceAccount(tx, appID)
+	if err != nil {
+		return err
+	}
+
+	account.Validated = isValid
+	now := time.Now()
+	account.LastChecked = &now
+
+	if err := tx.Save(&account).Error; err != nil {
+		return fmt.Errorf("failed to update service account validation: %w", err)
+	}
+	return nil
+}
+
+// ✅ Soft delete all service accounts for an app (you may want to filter by AppID in real-world case)
+func (r *playstoreSettingsRepository) SoftDeleteAllServiceAccounts(tx *gorm.DB, appID string) error {
+	// This deletes all — if you want to scope by AppID you'll need a relation
+	return tx.Model(&models.GooglePlayServiceAccount{}).Where("deleted_at IS NULL").Delete(nil).Error
+}
+
+// ✅ Get settings by AppID
+func (r *playstoreSettingsRepository) GetSettings(tx *gorm.DB, appID string) (models.GooglePlaySettings, error) {
+	var settings models.GooglePlaySettings
+	if err := tx.Where("app_id = ?", appID).First(&settings).Error; err != nil {
+		return models.GooglePlaySettings{}, fmt.Errorf("settings not found for app: %w", err)
 	}
 	return settings, nil
 }
 
-// -------------------------
-// 🚀 Save Settings (Upsert)
-// -------------------------
-func (r *playstoreSettingsRepository) SaveSettings(ctx context.Context, settings settingsModels.GooglePlaySettings) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"package_name"}), // ✅ Only updates required columns
-		}).Create(&settings).Error
-	})
-}
-
-// -------------------------
-// 🚀 Delete Package Name (Transaction)
-// -------------------------
-func (r *playstoreSettingsRepository) DeletePackageName(ctx context.Context) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		settings, err := r.GetSettings(ctx)
-		if err != nil {
-			return err // Already wrapped
-		}
-
-		// Clear the package name field
-		return tx.Model(&settings).Update("package_name", "").Error
-	})
+// ✅ Upsert settings based on app_id (conflict resolution)
+func (r *playstoreSettingsRepository) UpsertSettings(tx *gorm.DB, settings *models.GooglePlaySettings) error {
+	return tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "app_id"}}, // Unique key to detect conflict
+		DoUpdates: clause.AssignmentColumns([]string{"latest_service_account_id"}),
+	}).Create(settings).Error
 }

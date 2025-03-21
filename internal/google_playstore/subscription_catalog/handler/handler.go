@@ -38,6 +38,7 @@ func RegisterPlaystoreSubscriptionCatalogRoutes(r *gin.RouterGroup, handler *Sub
 	r.GET("/get-subscription-offer-details", handler.GetSubscriptionOfferDetailsHandler)
 	r.GET("/list-subscription-offer-names", handler.ListOfferNamesForBasePlanHandler)
 	r.GET("/check-subscription-offer-active", handler.CheckSubscriptionOfferActiveHandler)
+	r.GET("/check-subscription-offer-availability-in-region", handler.CheckSubscriptionOfferAvailabilityInRegionHandler)
 
 	r.GET("/get-subscription-offer-phases", handler.GetOfferPhasesHandler)
 	r.GET("/check-offer-phase-exists", handler.CheckSubscriptionOfferPhaseExistsHandler)
@@ -431,6 +432,48 @@ func (h *SubscriptionCatalogHandler) CheckSubscriptionOfferActiveHandler(c *gin.
 	}
 
 	c.JSON(http.StatusOK, gin.H{"is_active": isActive})
+}
+
+// ✅ Check Offer Availability in a Region - Handler
+func (h *SubscriptionCatalogHandler) CheckSubscriptionOfferAvailabilityInRegionHandler(c *gin.Context) {
+	// 🔹 Extract Query Parameters
+	packageName := c.Query("package_name")
+	productID := c.Query("product_id")
+	basePlanID := c.Query("base_plan_id")
+	offerID := c.Query("offer_id")
+	regionCode := c.Query("region_code")
+
+	// 🔹 Validate Required Parameters
+	if packageName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing required parameter: package_name"})
+		return
+	}
+	if productID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing required parameter: product_id"})
+		return
+	}
+	if basePlanID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing required parameter: base_plan_id"})
+		return
+	}
+	if offerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing required parameter: offer_id"})
+		return
+	}
+	if regionCode == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing required parameter: region_code"})
+		return
+	}
+
+	// 🔹 Check Offer Availability in Region
+	available, err := h.service.CheckSubscriptionOfferAvailabilityInRegion(packageName, productID, basePlanID, offerID, regionCode)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 🔹 Return Response
+	c.JSON(http.StatusOK, gin.H{"offer_available": available})
 }
 
 // ✅ API: Get Offer Phases

@@ -11,8 +11,8 @@ var AllModels = []interface{}{
 	&TestModel{},
 
 	// Core Centralized User Tables
-	&User{},
-	&UserPlatformChange{},
+	&AppUser{},
+	&AppUserPlatformChange{},
 
 	// Google playstore settings tables
 	&playstoreSettingsModels.GooglePlayServiceAccount{},
@@ -38,6 +38,7 @@ var AllModels = []interface{}{
 	&playstoreRtdnModels.PrepaidPlan{},
 	&playstoreRtdnModels.PrepaidPlanHistory{},
 	&playstoreRtdnModels.InstallmentPlan{},
+	&playstoreRtdnModels.InstallmentPlanHistory{},
 	&playstoreRtdnModels.SubscriptionItemPriceChangeDetails{},
 
 	// Google playstore Offer, Deferred Replacement & Promotions

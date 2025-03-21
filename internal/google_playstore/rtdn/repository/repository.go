@@ -18,6 +18,8 @@ type RTDNRepository interface {
 	UpdateWebhookStatus(ctx context.Context, eventID string, status string) error
 	IncrementRetryCount(ctx context.Context, eventID string) error
 	MoveToDeadLetterQueue(ctx context.Context, eventID string) error
+
+
 }
 
 // ✅ Struct with Injected Database Instance
@@ -127,3 +129,5 @@ func (r *rtdnRepository) MoveToDeadLetterQueue(ctx context.Context, eventID stri
 		return nil
 	})
 }
+
+

@@ -104,6 +104,21 @@ type InstallmentPlan struct {
 	UpdatedAt time.Time
 }
 
+type InstallmentPlanHistory struct {
+	ID                          uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	SubscriptionID              uuid.UUID `gorm:"type:uuid;not null;index"`
+	PreviousInitialCount        *int      `gorm:"null"`
+	CurrentInitialCount         *int      `gorm:"null"`
+	PreviousSubsequentCount     *int      `gorm:"null"`
+	CurrentSubsequentCount      *int      `gorm:"null"`
+	PreviousRemainingCount      *int      `gorm:"null"`
+	CurrentRemainingCount       *int      `gorm:"null"`
+	PreviousPendingCancellation *bool     `gorm:"null"`
+	CurrentPendingCancellation  *bool     `gorm:"null"`
+	ChangeTime                  time.Time `gorm:"not null"`
+	CreatedAt                   time.Time
+}
+
 type PrepaidPlanChangeType string
 
 const (

@@ -11,6 +11,7 @@ import (
 
 	"google.golang.org/api/androidpublisher/v3"
 	"google.golang.org/api/option"
+	"gorm.io/gorm"
 )
 
 var (
@@ -44,13 +45,14 @@ type PlaystoreClientService interface {
 
 // **playstoreClientService implements the PlaystoreSettingsService interface
 type playstoreClientService struct {
-	repo repository.PlaystoreSettingsRepository
-	ctx  context.Context
+	settingsRepo repository.PlaystoreSettingsRepository
+	ctx          context.Context
+	db           *gorm.DB
 }
 
 // **NewGooglePlayClientService creates a new instance of GooglePlayClientService.**
-func NewGooglePlayClientService(ctx context.Context, repo repository.PlaystoreSettingsRepository) PlaystoreClientService {
-	return &playstoreClientService{repo: repo, ctx: ctx}
+func NewGooglePlayClientService(ctx context.Context, settingsRepo repository.PlaystoreSettingsRepository, db *gorm.DB) PlaystoreClientService {
+	return &playstoreClientService{settingsRepo: settingsRepo, ctx: ctx, db: db}
 }
 
 // **GetPublisherService returns the singleton Android Publisher Service client.**
@@ -82,7 +84,7 @@ func (s *playstoreClientService) GetPublisherService() (*androidpublisher.Servic
 
 // **loadPublisherService loads AndroidPublisher service using the latest valid service account.**
 func (s *playstoreClientService) LoadPublisherService() (*androidpublisher.Service, error) {
-	serviceAccount, err := s.repo.GetLatestServiceAccount(s.ctx)
+	serviceAccount, err := s.settingsRepo.GetLatestServiceAccount(s.db)
 	if err != nil {
 		log.Printf("❌ Failed to fetch latest service account: %v\n", err)
 		return nil, fmt.Errorf("failed to load service account: %w", err)
