@@ -13,7 +13,7 @@ import (
 
 type UserRepository interface {
 	CreateAppUserIfNotExists(ctx context.Context, tx *gorm.DB, obfuscatedID, platform string) (uuid.UUID, error)
-	LogPlatformChange(ctx context.Context, tx *gorm.DB, userID, oldPlatform, newPlatform string) error
+	LogPlatformChange(ctx context.Context, tx *gorm.DB, userID uuid.UUID, oldPlatform, newPlatform string) error
 }
 
 type userRepository struct{}
@@ -43,7 +43,7 @@ func (r *userRepository) CreateAppUserIfNotExists(ctx context.Context, tx *gorm.
 				return uuid.Nil, err
 			}
 		}
-		return uuid.MustParse(user.ID), nil
+		return user.ID, nil
 	}
 
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -58,11 +58,11 @@ func (r *userRepository) CreateAppUserIfNotExists(ctx context.Context, tx *gorm.
 	if err := tx.WithContext(ctx).Create(&newUser).Error; err != nil {
 		return uuid.Nil, err
 	}
-	return uuid.MustParse(newUser.ID), nil
+	return newUser.ID, nil
 }
 
 // 📦 Log platform transition
-func (r *userRepository) LogPlatformChange(ctx context.Context, tx *gorm.DB, userID, oldPlatform, newPlatform string) error {
+func (r *userRepository) LogPlatformChange(ctx context.Context, tx *gorm.DB, userID uuid.UUID, oldPlatform, newPlatform string) error {
 	entry := models.AppUserPlatformChange{
 		UserID:      userID,
 		OldPlatform: oldPlatform,

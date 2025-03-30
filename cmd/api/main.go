@@ -13,26 +13,21 @@ import (
 	playstoreApiHandler "subsnotifpro-go/internal/playstore/api/handler"
 	playstoreApiService "subsnotifpro-go/internal/playstore/api/service"
 	playstoreClientService "subsnotifpro-go/internal/playstore/client/service"
+	playstoreCatalogHandler "subsnotifpro-go/internal/playstore/products/handler"
+	playstoreCatalogRepo "subsnotifpro-go/internal/playstore/products/repository"
+	playstoreCatalogService "subsnotifpro-go/internal/playstore/products/service"
 	playstoreRtdnHandler "subsnotifpro-go/internal/playstore/rtdn/handler"
-
-	playstoreSubscriptionSyncHandler "subsnotifpro-go/internal/playstore/products/handler"
-	playstoreSubscriptionSyncRepo "subsnotifpro-go/internal/playstore/products/repository"
-	playstoreSubscriptionSyncService "subsnotifpro-go/internal/playstore/products/service"
 	playstoreRTDNRepo "subsnotifpro-go/internal/playstore/rtdn/repository"
 	playstoreRTDNService "subsnotifpro-go/internal/playstore/rtdn/service"
 	playstoreSettingsHandler "subsnotifpro-go/internal/playstore/settings/handler"
 	playstoreSettingRepo "subsnotifpro-go/internal/playstore/settings/repository"
 	playstoreSettingServicePkg "subsnotifpro-go/internal/playstore/settings/service"
-
 	playstoreSubscriptionRepository "subsnotifpro-go/internal/playstore/subscription/repository"
 	playstoreSubscriptionService "subsnotifpro-go/internal/playstore/subscription/service"
 	playstoreUserRepo "subsnotifpro-go/internal/playstore/user/repository"
 	playstoreUserService "subsnotifpro-go/internal/playstore/user/service"
 	userRepo "subsnotifpro-go/internal/users/repository"
 	userService "subsnotifpro-go/internal/users/service"
-
-	playstoreCatalogRepo "subsnotifpro-go/internal/playstore/products/repository"
-	playstoreCatalogService "subsnotifpro-go/internal/playstore/products/service"
 
 	"sync"
 	"syscall"
@@ -84,7 +79,7 @@ func main() {
 
 	psRtdnRepo := playstoreRTDNRepo.NewRTDNRepository(db)
 	psSettingsRepo := playstoreSettingRepo.NewPlaystoreSettingsRepository(db)
-	psSubscriptionCatalogRepo := playstoreSubscriptionSyncRepo.NewSubscriptionCatalogRepository(db, getSyncBatchSize())
+	psSubscriptionCatalogRepo := playstoreCatalogRepo.NewSubscriptionCatalogRepository(db, getSyncBatchSize())
 
 	// 🟢 Services
 
@@ -116,8 +111,8 @@ func main() {
 	psRtdnHandler := playstoreRtdnHandler.NewRTDNHandler(psRtdnService)
 	psSettingsHandler := playstoreSettingsHandler.NewPlaystoreSettingsHandler(psSettingsService)
 	psApiHandler := playstoreApiHandler.NewPlaystoreClientHandler(psApiService)
-	psSubscriptionCatalogService := playstoreSubscriptionSyncService.NewSubscriptionCatalogService(ctx, psSubscriptionCatalogRepo, psApiService)
-	psSubscriptionCatalogHandler := playstoreSubscriptionSyncHandler.NewSubscriptionCatalogHandler(psSubscriptionCatalogService)
+	psSubscriptionCatalogService := playstoreCatalogService.NewSubscriptionCatalogService(ctx, psSubscriptionCatalogRepo, psApiService)
+	psSubscriptionCatalogHandler := playstoreCatalogHandler.NewSubscriptionCatalogHandler(psSubscriptionCatalogService)
 
 	deps := &routes.RouteDependencies{
 		RabbitMQChannel: ch,

@@ -29,7 +29,7 @@ type AutoRenewingPlan struct {
 	ExpiryTime time.Time `gorm:"not null;index"`                   // Current expiry date (most recent)
 
 	AutoRenewEnabled bool  `gorm:"not null;index"`
-	RecurringPrice   Money `gorm:"embedded"`
+	RecurringPrice   Money `gorm:"type:jsonb"`
 
 	// Optional: Link to latest price change details (if any)
 	PriceChangeDetailsID *uuid.UUID `gorm:"type:uuid;null;index;constraint:OnDelete:SET NULL"`
@@ -60,8 +60,8 @@ type AutoRenewingPlanHistory struct {
 	PreviousAutoRenewEnabled *bool `gorm:"null"` // Auto-renewal flag before change
 	CurrentAutoRenewEnabled  *bool `gorm:"null"` // Auto-renewal flag after change
 
-	PreviousPrice *Money `gorm:"embedded;null"` // Historical price before change
-	CurrentPrice  *Money `gorm:"embedded;null"` // Current price after change
+	PreviousPrice *Money `gorm:"type:jsonb"` // Historical price before change
+	CurrentPrice  *Money `gorm:"type:jsonb"` // Current price after change
 
 	// Optional: Link to latest price change details (if any)
 	PriceChangeDetailsID *uuid.UUID `gorm:"type:uuid;null;index;constraint:OnDelete:SET NULL"`

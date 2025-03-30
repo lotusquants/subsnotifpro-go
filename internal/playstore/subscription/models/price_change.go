@@ -63,7 +63,7 @@ type SubscriptionItemPriceChangeDetails struct {
 	LineItemID         uuid.UUID `gorm:"type:uuid;not null;index"`
 	AutoRenewingPlanID uuid.UUID `gorm:"type:uuid;not null;index"`
 
-	NewPrice Money `gorm:"embedded;embeddedPrefix:new_price_"`
+	NewPrice Money `gorm:"type:jsonb"`
 
 	PriceChangeMode  PriceChangeMode  `gorm:"type:varchar(50);not null"`
 	PriceChangeState PriceChangeState `gorm:"type:varchar(50);not null"`
@@ -83,9 +83,8 @@ type SubscriptionItemPriceChangeDetailsHistory struct {
 	LineItemID           uuid.UUID `gorm:"type:uuid;not null;index"`
 	AutoRenewingPlanID   uuid.UUID `gorm:"type:uuid;not null;index"`
 
-	PreviousPrice *Money `gorm:"embedded;embeddedPrefix:previous_price_;null"`
-	NewPrice      Money  `gorm:"embedded;embeddedPrefix:new_price_"`
-
+	PreviousPrice           *Money           `gorm:"type:jsonb"`
+	NewPrice                Money            `gorm:"type:jsonb"`
 	PreviousPriceChangeMode *PriceChangeMode `gorm:"type:varchar(50)"`
 	NewPriceChangeMode      PriceChangeMode  `gorm:"type:varchar(50);not null"`
 

@@ -17,9 +17,9 @@ type OfferDetails struct {
 	OfferTags  *[]string `gorm:"type:text;null"`
 
 	// Pricing information resolved from products catalog
-	BasePlanPrice          Money `gorm:"embedded;embeddedPrefix:base_plan_price_"`
+	BasePlanPrice          Money `gorm:"type:jsonb"`
 	CurrentOfferPhaseIndex *int  `gorm:"type:int;null"`
-	CurrentPhasePrice      Money `gorm:"embedded;embeddedPrefix:current_phase_price_"`
+	CurrentPhasePrice      Money `gorm:"type:jsonb"`
 
 	CreatedAt time.Time      `gorm:"autoCreateTime"`
 	UpdatedAt time.Time      `gorm:"autoUpdateTime"`
@@ -45,11 +45,11 @@ type OfferDetailsHistory struct {
 	CurrentOfferPhaseIndex  *int `gorm:"type:int;null"`
 
 	// Pricing history
-	PreviousBasePlanPrice *Money `gorm:"embedded;embeddedPrefix:base_plan_price_"`
-	CurrentBasePlanPrice  Money  `gorm:"embedded;embeddedPrefix:base_plan_price_"`
+	PreviousBasePlanPrice *Money `gorm:"type:jsonb"`
+	CurrentBasePlanPrice  Money  `gorm:"type:jsonb"`
 
-	PreviousPhasePrice *Money    `gorm:"embedded;embeddedPrefix:previous_phase_price_"`
-	CurrentPhasePrice  Money     `gorm:"embedded;embeddedPrefix:current_phase_price_"`
+	PreviousPhasePrice *Money    `gorm:"type:jsonb"`
+	CurrentPhasePrice  Money     `gorm:"type:jsonb"`
 	ChangeType         string    `gorm:"type:varchar(50);not null;index"` // ADDED, UPDATED, REMOVED
 	ChangeEventID      uuid.UUID `gorm:"type:uuid;not null;index"`
 	ChangedAt          time.Time `gorm:"autoCreateTime"`
