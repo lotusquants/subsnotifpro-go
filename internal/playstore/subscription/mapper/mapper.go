@@ -1,7 +1,6 @@
 package mapper
 
 import (
-	"context"
 	"subsnotifpro-go/internal/playstore/subscription/models"
 	playstoreModels "subsnotifpro-go/internal/playstore/user/models"
 	"time"
@@ -63,69 +62,4 @@ func nullableString(s string) *string {
 		return nil
 	}
 	return &s
-}
-
-// buildSubscriptionUpdateFields compares current vs new values and builds a map of changed fields for update.
-func BuildSubscriptionUpdateFields(
-	ctx context.Context,
-	existing *models.SubscriptionPurchaseV2,
-	updates *SubscriptionUpdateParams,
-) (map[string]interface{}, error) {
-	fields := make(map[string]interface{})
-
-	// UUID fields
-	if existing.UserID != updates.AppUserID {
-		fields["user_id"] = updates.AppUserID
-	}
-	if existing.RegionCodeID != updates.RegionID {
-		fields["region_code_id"] = updates.RegionID
-	}
-	if existing.SubscriptionStateModelID != updates.SubscriptionStateModelID {
-		fields["subscription_state_model_id"] = updates.SubscriptionStateModelID
-	}
-	if existing.AcknowledgementStateModelID != updates.AcknowledgementStateModelID {
-		fields["acknowledgement_state_model_id"] = updates.AcknowledgementStateModelID
-	}
-	if !uuidPtrEqual(existing.SubscriptionPausedContextID, updates.PausedContextID) {
-		fields["subscription_paused_context_id"] = updates.PausedContextID
-	}
-	if !uuidPtrEqual(existing.SubscriptionCancellationContextID, updates.CancellationContextID) {
-		fields["subscription_cancellation_context_id"] = updates.CancellationContextID
-	}
-
-	// Timestamps
-	if !existing.StartTime.Equal(updates.StartTime) {
-		fields["start_time"] = updates.StartTime
-	}
-
-	// Strings
-	if existing.LatestOrderId != updates.LatestOrderId {
-		fields["latest_order_id"] = updates.LatestOrderId
-	}
-	if existing.PackageName != updates.PackageName {
-		fields["package_name"] = updates.PackageName
-	}
-
-	if existing.LinkedFromSubscriptionID != updates.LinkedFromSubscriptionID {
-		fields["linked_from_subscription_id"] = updates.LinkedFromSubscriptionID
-	}
-
-	// Add line items comparison if needed
-	if updates.LineItems != nil {
-		// This assumes you want to replace all line items
-		// Adjust logic if you need more sophisticated comparison
-		fields["line_items"] = updates.LineItems
-	}
-
-	return fields, nil
-}
-
-func uuidPtrEqual(a, b *uuid.UUID) bool {
-	if a == nil && b == nil {
-		return true
-	}
-	if a != nil && b != nil {
-		return *a == *b
-	}
-	return false
 }

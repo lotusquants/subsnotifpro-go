@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"subsnotifpro-go/internal/playstore/subscription/models"
 
@@ -21,12 +20,9 @@ type PlaystoreSubscriptionRepository interface {
 	UpdateSubscriptionFields(ctx context.Context, tx *gorm.DB, subscriptionID uuid.UUID, updateFields map[string]interface{}) error
 
 	CreateSubscriptionChangeEvent(ctx context.Context, tx *gorm.DB, event *models.SubscriptionChangeEvent) (uuid.UUID, error)
-	GetOrCreateRegionCodeID(ctx context.Context, tx *gorm.DB, code string) (uuid.UUID, error)
-	GetOrCreateSubscriptionStateModel(ctx context.Context, tx *gorm.DB, state models.SubscriptionState) (uuid.UUID, error)
 	InsertSubscriptionStateTransition(ctx context.Context, tx *gorm.DB, history *models.SubscriptionStateTransitionHistory) error
 	InsertOrderIDTransition(ctx context.Context, tx *gorm.DB, history *models.SubscriptionOrderIdTransitionHistory) error
 
-	GetOrCreateAcknowledgementStateModel(ctx context.Context, tx *gorm.DB, state models.AcknowledgementState) (uuid.UUID, error)
 	InsertAcknowledgementStateTransition(ctx context.Context, tx *gorm.DB, history *models.AcknowledgementStateTransitionHistory) error
 
 	UpdatePausedContext(ctx context.Context, tx *gorm.DB, context *models.SubscriptionPausedContext) error
@@ -142,57 +138,6 @@ func (r *playstoreSubscriptionRepository) UpdateSubscriptionFields(
 	return nil
 }
 
-func (r *playstoreSubscriptionRepository) GetOrCreateRegionCodeID(ctx context.Context, tx *gorm.DB, code string) (uuid.UUID, error) {
-	code = strings.ToUpper(code)
-	var region models.RegionCode
-
-	err := tx.WithContext(ctx).
-		Where("code = ?", code).
-		First(&region).Error
-
-	if err == nil {
-		return region.ID, nil
-	}
-	if err != gorm.ErrRecordNotFound {
-		return uuid.Nil, err
-	}
-
-	region = models.RegionCode{Code: code}
-	if err := tx.WithContext(ctx).Create(&region).Error; err != nil {
-		return uuid.Nil, err
-	}
-
-	return region.ID, nil
-}
-
-func (r *playstoreSubscriptionRepository) GetOrCreateSubscriptionStateModel(
-	ctx context.Context,
-	tx *gorm.DB,
-	state models.SubscriptionState,
-) (uuid.UUID, error) {
-	var model models.SubscriptionStateModel
-
-	err := tx.WithContext(ctx).
-		Where("state = ?", state).
-		First(&model).Error
-
-	if err == nil {
-		return model.ID, nil
-	}
-	if err != gorm.ErrRecordNotFound {
-		return uuid.Nil, err
-	}
-
-	newModel := models.SubscriptionStateModel{
-		State: state,
-	}
-	if err := tx.WithContext(ctx).Create(&newModel).Error; err != nil {
-		return uuid.Nil, err
-	}
-
-	return newModel.ID, nil
-}
-
 func (r *playstoreSubscriptionRepository) InsertSubscriptionStateTransition(
 	ctx context.Context,
 	tx *gorm.DB,
@@ -238,35 +183,6 @@ func (r *playstoreSubscriptionRepository) InsertAcknowledgementStateTransition(
 		return fmt.Errorf("failed to insert acknowledgement state transition: %w", err)
 	}
 	return nil
-}
-
-func (r *playstoreSubscriptionRepository) GetOrCreateAcknowledgementStateModel(
-	ctx context.Context,
-	tx *gorm.DB,
-	state models.AcknowledgementState,
-) (uuid.UUID, error) {
-	var model models.AcknowledgementStateModel
-
-	err := tx.WithContext(ctx).
-		Where("state = ?", state).
-		First(&model).Error
-
-	if err == nil {
-		return model.ID, nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return uuid.Nil, fmt.Errorf("failed to query acknowledgement state model: %w", err)
-	}
-
-	// Create new entry
-	model = models.AcknowledgementStateModel{
-		State: state,
-	}
-	if err := tx.WithContext(ctx).Create(&model).Error; err != nil {
-		return uuid.Nil, fmt.Errorf("failed to create acknowledgement state model: %w", err)
-	}
-
-	return model.ID, nil
 }
 
 func (r *playstoreSubscriptionRepository) UpdatePausedContext(

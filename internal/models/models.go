@@ -30,7 +30,7 @@ var AllModels = []interface{}{
 	&playstoreRtdnModels.GooglePlayWebhookEvent{},
 
 	// Core Google playstore Subscription Models
-	&playstoreSubscriptionModels.AcknowledgementStateModel{},
+
 	&playstoreSubscriptionModels.AcknowledgementStateTransitionHistory{},
 	&playstoreSubscriptionModels.AutoRenewingPlan{},
 	&playstoreSubscriptionModels.AutoRenewingPlanHistory{},
@@ -51,12 +51,12 @@ var AllModels = []interface{}{
 	&playstoreSubscriptionModels.PrepaidPlanHistory{},
 	&playstoreSubscriptionModels.SubscriptionItemPriceChangeDetails{},
 	&playstoreSubscriptionModels.SubscriptionItemPriceChangeDetailsHistory{},
-	&playstoreSubscriptionModels.RegionCode{},
+
 	&playstoreSubscriptionModels.SignupPromotion{},
 	&playstoreSubscriptionModels.SignupPromotionHistory{},
 	&playstoreSubscriptionModels.SubscriptionPurchaseV2{},
 	&playstoreSubscriptionModels.SubscriptionOrderIdTransitionHistory{},
-	&playstoreSubscriptionModels.SubscriptionStateModel{},
+
 	&playstoreSubscriptionModels.SubscriptionStateTransitionHistory{},
 
 	// 🔹 Subscription Sync Models

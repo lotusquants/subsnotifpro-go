@@ -21,14 +21,9 @@ type SubscriptionPurchaseV2 struct {
 	UserID uuid.UUID           `gorm:"type:uuid;not null;index;constraint:OnDelete:CASCADE"`
 	User   *userModels.AppUser `gorm:"foreignKey:UserID"`
 
-	RegionCodeID uuid.UUID  `gorm:"type:uuid;not null;index"`
-	RegionCode   RegionCode `gorm:"foreignKey:RegionCodeID"`
-
-	SubscriptionStateModelID uuid.UUID               `gorm:"type:uuid;not null;index"`
-	SubscriptionStateModel   *SubscriptionStateModel `gorm:"foreignKey:SubscriptionStateModelID"`
-
-	AcknowledgementStateModelID uuid.UUID                  `gorm:"type:uuid;not null;index"`
-	AcknowledgementStateModel   *AcknowledgementStateModel `gorm:"foreignKey:AcknowledgementStateModelID"`
+	RegionCode           string               `gorm:"type:varchar(5);not null;index"`
+	SubscriptionState    SubscriptionState    `gorm:"type:varchar(50);not null;index"`
+	AcknowledgementState AcknowledgementState `gorm:"type:varchar(50);not null;index"`
 
 	SubscriptionPausedContextID *uuid.UUID                 `gorm:"type:uuid;null;index;constraint:OnDelete:SET NULL"`
 	SubscriptionPausedContext   *SubscriptionPausedContext `gorm:"foreignKey:SubscriptionPausedContextID"`
@@ -44,16 +39,4 @@ type SubscriptionPurchaseV2 struct {
 	CreatedAt time.Time      `gorm:"autoCreateTime;index"`
 	UpdatedAt time.Time      `gorm:"autoUpdateTime;index"`
 	DeletedAt gorm.DeletedAt `gorm:"index"`
-}
-
-type SubscriptionOrderIdTransitionHistory struct {
-	ID             uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	SubscriptionID uuid.UUID `gorm:"type:uuid;not null;index"` // FK to SubscriptionPurchaseV2
-
-	PreviousOrderID string    `gorm:"type:varchar(100);not null"`
-	NewOrderID      string    `gorm:"type:varchar(100);not null"`
-	TransitionedAt  time.Time `gorm:"not null;autoCreateTime"` // Time when the transition was recorded
-
-	Reason        string    `gorm:"type:varchar(255);null"` // Optional reason (e.g., "BasePlan change", "Upgrade", "Replace")
-	ChangeEventID uuid.UUID `gorm:"type:uuid;not null;index"`
 }

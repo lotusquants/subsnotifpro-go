@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func (s *playstoreSubscriptionService) ResolveOrderID(
+func (s *playstoreSubscriptionService) RecordOrderIDChange(
 	ctx context.Context,
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,

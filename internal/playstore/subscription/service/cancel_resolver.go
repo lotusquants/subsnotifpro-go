@@ -16,13 +16,13 @@ import (
 func (s *playstoreSubscriptionService) ResolveCancellationContext(
 	ctx context.Context,
 	tx *gorm.DB,
-	existingSubID *uuid.UUID,
+	subscriptionID uuid.UUID,
 	existing *models.SubscriptionPurchaseV2,
 	subData *androidpublisher.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
 	notificationType rtdnModels.SubscriptionNotificationType,
 ) (*uuid.UUID, error) {
-	subscriptionID := *existingSubID
+
 	existingCtx := existing.SubscriptionCancellationContext
 
 	switch notificationType {

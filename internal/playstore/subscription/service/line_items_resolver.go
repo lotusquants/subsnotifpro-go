@@ -17,7 +17,7 @@ import (
 func (s *playstoreSubscriptionService) ResolveLineItems(
 	ctx context.Context,
 	tx *gorm.DB,
-	existingSubID *uuid.UUID,
+	subscriptionID uuid.UUID,
 	existing *models.SubscriptionPurchaseV2,
 	subData *androidpublisher.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
@@ -41,7 +41,7 @@ func (s *playstoreSubscriptionService) ResolveLineItems(
 		if exists {
 			// Update existing line item and its nested models
 			updatedItem, itemHistory, err := s.updateLineItemAndNestedModels(
-				ctx, tx, *existingSubID, *existing, existingItem, newItem, changeEventID, notificationType,
+				ctx, tx, subscriptionID, *existing, existingItem, newItem, changeEventID, notificationType,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("failed to update line item %s: %w", productID, err)
@@ -54,7 +54,7 @@ func (s *playstoreSubscriptionService) ResolveLineItems(
 		} else {
 			// Create new line item with nested models
 			newLineItem, itemHistory, err := s.createLineItemWithNestedModels(
-				ctx, tx, *existingSubID, *existing, newItem, changeEventID,
+				ctx, tx, subscriptionID, *existing, newItem, changeEventID,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create line item %s: %w", productID, err)

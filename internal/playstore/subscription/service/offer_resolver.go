@@ -30,7 +30,7 @@ func (s *playstoreSubscriptionService) createOfferDetails(
 	packageName := subscriptionData.PackageName
 	productID := newLineItemData.ProductId
 	basePlanID := offer.BasePlanId
-	regionCode := subscriptionData.RegionCode.Code
+	regionCode := subscriptionData.RegionCode
 	startTime := subscriptionData.StartTime
 
 	// 1. Get base plan price (required for both base and discounted offers)
@@ -156,7 +156,7 @@ func (s *playstoreSubscriptionService) updateOfferDetails(
 	offer := newLineItemData.OfferDetails
 	packageName := subscriptionData.PackageName
 	productID := newLineItemData.ProductId
-	regionCode := subscriptionData.RegionCode.Code
+	regionCode := subscriptionData.RegionCode
 	startTime := subscriptionData.StartTime
 
 	// 1. Get base plan price (required for both base and discounted offers)

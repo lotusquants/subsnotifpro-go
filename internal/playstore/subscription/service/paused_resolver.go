@@ -17,27 +17,27 @@ import (
 func (s *playstoreSubscriptionService) ResolvePausedContext(
 	ctx context.Context,
 	tx *gorm.DB,
-	existingSubID *uuid.UUID,
+	subscriptionID uuid.UUID,
 	existing *models.SubscriptionPurchaseV2,
 	subData *androidpublisher.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
 	notificationType rtdnModels.SubscriptionNotificationType,
 ) (*uuid.UUID, error) {
-	subscriptionID := *existingSubID
+
 	pausedContext := existing.SubscriptionPausedContext
 
 	switch notificationType {
 	case rtdnModels.SubscriptionPauseScheduleChanged:
-		return s.handlePauseScheduleChanged(ctx, tx, pausedContext, subscriptionID, subData, changeEventID, existing.SubscriptionStateModel.State)
+		return s.handlePauseScheduleChanged(ctx, tx, pausedContext, subscriptionID, subData, changeEventID)
 
 	case rtdnModels.SubscriptionPaused:
-		return s.handlePaused(ctx, tx, pausedContext, subscriptionID, subData, changeEventID, existing.SubscriptionStateModel.State)
+		return s.handlePaused(ctx, tx, pausedContext, subscriptionID, subData, changeEventID)
 
 	case rtdnModels.SubscriptionRenewed:
-		return s.handleResumed(ctx, tx, pausedContext, subscriptionID, changeEventID, existing.SubscriptionStateModel.State)
+		return s.handleResumed(ctx, tx, pausedContext, subscriptionID, changeEventID)
 
 	case rtdnModels.SubscriptionExpired, rtdnModels.SubscriptionRevoked:
-		return s.handleExpired(ctx, tx, pausedContext, subscriptionID, changeEventID, existing.SubscriptionStateModel.State)
+		return s.handleExpired(ctx, tx, pausedContext, subscriptionID, changeEventID)
 	}
 
 	return nil, nil
@@ -50,7 +50,7 @@ func (s *playstoreSubscriptionService) handlePauseScheduleChanged(
 	subscriptionID uuid.UUID,
 	subData *androidpublisher.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
-	subState models.SubscriptionState,
+
 ) (*uuid.UUID, error) {
 
 	autoPauseTimeStr := subData.LineItems[0].ExpiryTime
@@ -75,7 +75,7 @@ func (s *playstoreSubscriptionService) handlePauseScheduleChanged(
 		if err := s.repo.UpdatePausedContext(ctx, tx, existing); err != nil {
 			return nil, err
 		}
-		history := buildPausedContextHistory(existing, subscriptionID, changeEventID, models.PauseChangeScheduleEdit, subState)
+		history := buildPausedContextHistory(existing, subscriptionID, changeEventID, models.PauseChangeScheduleEdit)
 		err := s.repo.InsertPausedContextHistory(ctx, tx, history)
 		if err != nil {
 			log.Printf("Failed to insert paused context history: %v", err)
@@ -96,7 +96,7 @@ func (s *playstoreSubscriptionService) handlePauseScheduleChanged(
 	if err := s.repo.InsertPausedContext(ctx, tx, newCtx); err != nil {
 		return nil, err
 	}
-	history := buildPausedContextHistory(newCtx, subscriptionID, changeEventID, models.PauseChangeScheduleCreate, subState)
+	history := buildPausedContextHistory(newCtx, subscriptionID, changeEventID, models.PauseChangeScheduleCreate)
 
 	return &newCtx.ID, s.repo.InsertPausedContextHistory(ctx, tx, history)
 }
@@ -108,7 +108,7 @@ func (s *playstoreSubscriptionService) handlePaused(
 	subscriptionID uuid.UUID,
 	subData *androidpublisher.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
-	subState models.SubscriptionState,
+
 ) (*uuid.UUID, error) {
 	now := time.Now()
 
@@ -134,7 +134,7 @@ func (s *playstoreSubscriptionService) handlePaused(
 		if err := s.repo.InsertPausedContext(ctx, tx, newCtx); err != nil {
 			return nil, err
 		}
-		history := buildPausedContextHistory(newCtx, subscriptionID, changeEventID, models.PauseChangePausedAuto, subState)
+		history := buildPausedContextHistory(newCtx, subscriptionID, changeEventID, models.PauseChangePausedAuto)
 		return &newCtx.ID, s.repo.InsertPausedContextHistory(ctx, tx, history)
 	}
 
@@ -146,7 +146,7 @@ func (s *playstoreSubscriptionService) handlePaused(
 	if err := s.repo.UpdatePausedContext(ctx, tx, existing); err != nil {
 		return nil, err
 	}
-	history := buildPausedContextHistory(existing, subscriptionID, changeEventID, models.PauseChangePausedAuto, subState)
+	history := buildPausedContextHistory(existing, subscriptionID, changeEventID, models.PauseChangePausedAuto)
 	return &existing.ID, s.repo.InsertPausedContextHistory(ctx, tx, history)
 }
 
@@ -156,7 +156,7 @@ func (s *playstoreSubscriptionService) handleResumed(
 	existing *models.SubscriptionPausedContext,
 	subscriptionID uuid.UUID,
 	changeEventID uuid.UUID,
-	subState models.SubscriptionState,
+
 ) (*uuid.UUID, error) {
 	if existing == nil {
 		return nil, nil
@@ -168,7 +168,7 @@ func (s *playstoreSubscriptionService) handleResumed(
 	if err := s.repo.UpdatePausedContext(ctx, tx, existing); err != nil {
 		return nil, err
 	}
-	history := buildPausedContextHistory(existing, subscriptionID, changeEventID, models.PauseChangeResumedAuto, subState)
+	history := buildPausedContextHistory(existing, subscriptionID, changeEventID, models.PauseChangeResumedAuto)
 	return &existing.ID, s.repo.InsertPausedContextHistory(ctx, tx, history)
 }
 
@@ -178,7 +178,6 @@ func (s *playstoreSubscriptionService) handleExpired(
 	existing *models.SubscriptionPausedContext,
 	subscriptionID uuid.UUID,
 	changeEventID uuid.UUID,
-	subState models.SubscriptionState,
 ) (*uuid.UUID, error) {
 	if existing == nil {
 		return nil, nil
@@ -189,7 +188,7 @@ func (s *playstoreSubscriptionService) handleExpired(
 	if err := s.repo.UpdatePausedContext(ctx, tx, existing); err != nil {
 		return nil, err
 	}
-	history := buildPausedContextHistory(existing, subscriptionID, changeEventID, models.PauseChangeExpired, subState)
+	history := buildPausedContextHistory(existing, subscriptionID, changeEventID, models.PauseChangeExpired)
 	return &existing.ID, s.repo.InsertPausedContextHistory(ctx, tx, history)
 }
 
@@ -198,7 +197,6 @@ func buildPausedContextHistory(
 	subscriptionID uuid.UUID,
 	changeEventID uuid.UUID,
 	reason models.PauseChangeReason,
-	subState models.SubscriptionState,
 ) *models.SubscriptionPausedContextHistory {
 	return &models.SubscriptionPausedContextHistory{
 		ID:                uuid.New(),
@@ -216,7 +214,6 @@ func buildPausedContextHistory(
 		ResumeReason:      ctx.ResumeReason,
 		PauseChangeReason: reason,
 		ChangeEventID:     changeEventID,
-		SubscriptionState: subState,
 		ChangedAt:         time.Now(),
 	}
 }

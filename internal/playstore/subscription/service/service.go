@@ -60,14 +60,14 @@ func (s *playstoreSubscriptionService) UpsertSubscription(
 	event rtdnModels.GooglePlayWebhookEvent,
 ) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 1️⃣ Extract essentials
+		// 1️⃣ Validate and extract essential fields
 		purchaseToken := event.SubscriptionNotification.PurchaseToken
 		subscriptionProductId := event.SubscriptionNotification.SubscriptionID
 		notificationType := event.SubscriptionNotification.NotificationType
 		packageName := event.PackageName
 
 		if purchaseToken == "" || packageName == "" || subscriptionProductId == "" {
-			return fmt.Errorf("missing purchaseToken or packageName or subscriptionProductId")
+			return fmt.Errorf("missing required fields: purchaseToken, packageName or subscriptionProductId")
 		}
 
 		obfuscatedID := subData.ExternalAccountIdentifiers.ObfuscatedExternalAccountId
@@ -89,141 +89,343 @@ func (s *playstoreSubscriptionService) UpsertSubscription(
 			return fmt.Errorf("failed to check subscription existence: %w", err)
 		}
 
-		var existingSubID *uuid.UUID
-		if existing != nil {
-			id := existing.ID
-			existingSubID = &id
-
-		}
-
-		var (
-			subscriptionID uuid.UUID
-			changeEventID  uuid.UUID
-		)
-
-		if existing != nil {
-			// 🔁 Existing subscription: parse ID and create change event
-			subscriptionID = existing.ID
-
-			changeEventID, err = s.repo.CreateSubscriptionChangeEvent(ctx, tx, &models.SubscriptionChangeEvent{
-				SubscriptionID:   subscriptionID,
-				NotificationType: notificationType,
-			})
-			if err != nil {
-				return fmt.Errorf("failed to create change event: %w", err)
-			}
+		// 5️⃣ Branch based on whether subscription exists
+		if existing == nil {
+			// 🆕 CREATE NEW SUBSCRIPTION PATH
+			return s.createNewSubscription(ctx, tx, appUserID, packageName, purchaseToken, subData, subscriptionProductId, notificationType)
 		} else {
-			// 🆕 New subscription: generate ID, and create change event *before insert*
-			subscriptionID = uuid.New()
-
-			changeEventID, err = s.repo.CreateSubscriptionChangeEvent(ctx, tx, &models.SubscriptionChangeEvent{
-				SubscriptionID: subscriptionID,
-			})
-			if err != nil {
-				return fmt.Errorf("failed to create change event: %w", err)
-			}
+			// 🔁 UPDATE EXISTING SUBSCRIPTION PATH
+			return s.updateExistingSubscription(ctx, tx, appUserID, existing, subData, subscriptionProductId, notificationType)
 		}
-
-		// 4️⃣ Resolve all dependent models with conditional change tracking
-		regionID, err := s.repo.GetOrCreateRegionCodeID(ctx, tx, subData.RegionCode)
-		if err != nil {
-			return fmt.Errorf("failed to resolve region: %w", err)
-		}
-
-		subStateID, err := s.ResolveSubscriptionState(ctx, tx, *existingSubID, existing, models.SubscriptionState(subData.SubscriptionState), changeEventID)
-		if err != nil {
-			return fmt.Errorf("failed to resolve subscription state: %w", err)
-		}
-
-		latestOrderID, err := s.ResolveOrderID(ctx, tx, subscriptionID, existing, subData.LatestOrderId, changeEventID)
-		if err != nil {
-			return fmt.Errorf("failed to resolve order ID: %w", err)
-		}
-
-		// 🧩 If this subscription replaces another, handle the linked (old) subscription
-		var linkedFromSubID *uuid.UUID
-
-		if subData.LinkedPurchaseToken != "" {
-			log.Printf("🔗 Linked purchase token detected: %s. Attempting to resolve and retire previous subscription...", subData.LinkedPurchaseToken)
-
-			linkedFromSubID, err = s.ResolveLinkedPurchaseToken(ctx, tx, subData,
-				subscriptionID,
-				purchaseToken,
-				changeEventID)
-			if err != nil {
-				return fmt.Errorf("failed to resolve linked purchase token: %w", err)
-			}
-		}
-
-		ackStateID, err := s.ResolveAcknowledgementState(ctx, tx, existingSubID, existing, subData.AcknowledgementState, changeEventID, subscriptionProductId)
-		if err != nil {
-			return fmt.Errorf("failed to resolve acknowledgement state: %w", err)
-		}
-
-		pausedCtxID, err := s.ResolvePausedContext(ctx, tx, existingSubID, existing, subData, changeEventID, notificationType)
-		if err != nil {
-			return fmt.Errorf("failed to resolve paused context: %w", err)
-		}
-
-		cancelCtxID, err := s.ResolveCancellationContext(ctx, tx, existingSubID, existing, subData, changeEventID, notificationType)
-		if err != nil {
-			return fmt.Errorf("failed to resolve cancellation context: %w", err)
-		}
-
-		LineItems, err := s.ResolveLineItems(ctx, tx, existingSubID, existing, subData, changeEventID, notificationType)
-		if err != nil {
-			return fmt.Errorf("failed to resolve plan models: %w", err)
-		}
-
-		startTime, err := time.Parse(time.RFC3339, subData.StartTime)
-		if err != nil {
-			return fmt.Errorf("invalid startTime format: %w", err)
-		}
-		if existing != nil {
-			// 🔁 Update existing
-			updateFields, err := mapper.BuildSubscriptionUpdateFields(ctx, existing, &mapper.SubscriptionUpdateParams{
-				AppUserID:                   appUserID,
-				RegionID:                    regionID,
-				SubscriptionStateModelID:    subStateID,
-				AcknowledgementStateModelID: ackStateID,
-				PausedContextID:             pausedCtxID,
-				CancellationContextID:       cancelCtxID,
-				LineItems:                   LineItems,
-				StartTime:                   startTime,
-				LatestOrderId:               latestOrderID,
-				PackageName:                 packageName,
-				LinkedFromSubscriptionID:    linkedFromSubID,
-			})
-			if err != nil {
-				return fmt.Errorf("failed to build update fields: %w", err)
-			}
-			if len(updateFields) > 0 {
-				if err := s.repo.UpdateSubscriptionFields(ctx, tx, existing.ID, updateFields); err != nil {
-					return fmt.Errorf("failed to update subscription: %w", err)
-				}
-			}
-		} else {
-			// 🆕 Insert new
-			newSub := models.SubscriptionPurchaseV2{
-				ID:                                subscriptionID,
-				PackageName:                       packageName,
-				PurchaseToken:                     purchaseToken,
-				UserID:                            appUserID,
-				RegionCodeID:                      regionID,
-				SubscriptionStateModelID:          subStateID,
-				AcknowledgementStateModelID:       ackStateID,
-				SubscriptionPausedContextID:       pausedCtxID,
-				SubscriptionCancellationContextID: cancelCtxID,
-				LineItems:                         LineItems,
-				StartTime:                         startTime,
-				LatestOrderId:                     latestOrderID,
-				LinkedFromSubscriptionID:          linkedFromSubID,
-			}
-			if err := s.repo.InsertSubscription(ctx, tx, &newSub); err != nil {
-				return fmt.Errorf("failed to insert subscription: %w", err)
-			}
-		}
-
-		return nil
 	})
+}
+
+func (s *playstoreSubscriptionService) createNewSubscription(
+	ctx context.Context,
+	tx *gorm.DB,
+	appUserID uuid.UUID,
+	packageName string,
+	purchaseToken string,
+	subData *androidpublisher.SubscriptionPurchaseV2,
+	subscriptionProductId string,
+	notificationType rtdnModels.SubscriptionNotificationType,
+) error {
+	// 1. Validate essential fields first
+	if err := validateSubscriptionData(subData); err != nil {
+		return fmt.Errorf("invalid subscription data: %w", err)
+	}
+
+	// 2. Parse and validate core fields
+	startTime, err := time.Parse(time.RFC3339, subData.StartTime)
+	if err != nil {
+		return fmt.Errorf("invalid startTime format: %w", err)
+	}
+
+	newSubscriptionState := models.SubscriptionState(subData.SubscriptionState)
+	newAckState := models.AcknowledgementState(subData.AcknowledgementState)
+
+	// 3. Create minimal subscription record
+	subscriptionID := uuid.New()
+	newSub := models.SubscriptionPurchaseV2{
+		ID:                   subscriptionID,
+		PackageName:          packageName,
+		PurchaseToken:        purchaseToken,
+		UserID:               appUserID,
+		StartTime:            startTime,
+		LatestOrderId:        subData.LatestOrderId,
+		SubscriptionState:    newSubscriptionState,
+		AcknowledgementState: newAckState,
+		RegionCode:           subData.RegionCode,
+	}
+
+	if err := s.repo.InsertSubscription(ctx, tx, &newSub); err != nil {
+		return fmt.Errorf("failed to insert base subscription: %w", err)
+	}
+
+	// 4. Create change event
+	changeEventID, err := s.repo.CreateSubscriptionChangeEvent(ctx, tx, &models.SubscriptionChangeEvent{
+		SubscriptionID:   subscriptionID,
+		NotificationType: notificationType,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create change event: %w", err)
+	}
+
+	// 5. Record initial state transitions
+	if err := s.recordInitialStateTransitions(
+		ctx, tx, subscriptionID, newSubscriptionState, newAckState,
+		changeEventID, packageName, subscriptionProductId, purchaseToken,
+	); err != nil {
+		return err
+	}
+
+	// 6. Process linked purchase token if exists
+	updateFields := make(map[string]interface{})
+	if subData.LinkedPurchaseToken != "" {
+		if err := s.processLinkedPurchaseToken(
+			ctx, tx, subData, subscriptionID, purchaseToken,
+			changeEventID, updateFields,
+		); err != nil {
+			return err
+		}
+	}
+
+	// 7. Handle line items
+	if _, err := s.ResolveLineItems(
+		ctx, tx, subscriptionID, nil, subData, changeEventID, notificationType,
+	); err != nil {
+		return fmt.Errorf("failed to resolve line items: %w", err)
+	}
+
+	// 8. Acknowledge with Play Store and update state
+	if err := s.processAcknowledgement(
+		ctx, tx, subscriptionID, newAckState, changeEventID,
+		packageName, subscriptionProductId, purchaseToken, updateFields,
+	); err != nil {
+		return err
+	}
+
+	// 9. Final update if any fields need updating
+	if len(updateFields) > 0 {
+		if err := s.repo.UpdateSubscriptionFields(ctx, tx, subscriptionID, updateFields); err != nil {
+			return fmt.Errorf("failed to update subscription relations: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// Helper functions for better organization:
+
+func validateSubscriptionData(subData *androidpublisher.SubscriptionPurchaseV2) error {
+	if subData.RegionCode == "" {
+		return errors.New("region code cannot be empty")
+	}
+	if subData.StartTime == "" {
+		return errors.New("start time cannot be empty")
+	}
+	if subData.SubscriptionState == "" {
+		return errors.New("subscription state cannot be empty")
+	}
+	return nil
+}
+
+func (s *playstoreSubscriptionService) recordInitialStateTransitions(
+	ctx context.Context,
+	tx *gorm.DB,
+	subscriptionID uuid.UUID,
+	subState models.SubscriptionState,
+	ackState models.AcknowledgementState,
+	changeEventID uuid.UUID,
+	packageName string,
+	subscriptionProductId string,
+	purchaseToken string,
+) error {
+	if err := s.RecordSubscriptionStateChange(
+		ctx, tx, subscriptionID, nil, subState, changeEventID,
+	); err != nil {
+		return fmt.Errorf("failed to record subscription state change: %w", err)
+	}
+
+	if err := s.RecordAckStateTransitionForCreateBeforeAckApiCall(
+		ctx, tx, subscriptionID, ackState, changeEventID,
+		packageName, subscriptionProductId, purchaseToken,
+	); err != nil {
+		return fmt.Errorf("failed to record ack state change: %w", err)
+	}
+	return nil
+}
+
+func (s *playstoreSubscriptionService) processLinkedPurchaseToken(
+	ctx context.Context,
+	tx *gorm.DB,
+	subData *androidpublisher.SubscriptionPurchaseV2,
+	subscriptionID uuid.UUID,
+	purchaseToken string,
+	changeEventID uuid.UUID,
+	updateFields map[string]interface{},
+) error {
+	log.Printf("🔗 Resolving linked purchase token: %s", subData.LinkedPurchaseToken)
+	linkedFromSubID, err := s.ResolveLinkedPurchaseToken(
+		ctx, tx, subData, subscriptionID, purchaseToken, changeEventID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve linked purchase token: %w", err)
+	}
+	updateFields["linked_from_subscription_id"] = linkedFromSubID
+	updateFields["linked_purchase_token"] = subData.LinkedPurchaseToken
+	return nil
+}
+
+func (s *playstoreSubscriptionService) processAcknowledgement(
+	ctx context.Context,
+	tx *gorm.DB,
+	subscriptionID uuid.UUID,
+	currentAckState models.AcknowledgementState,
+	changeEventID uuid.UUID,
+	packageName string,
+	subscriptionProductId string,
+	purchaseToken string,
+	updateFields map[string]interface{},
+) error {
+	refreshedState, err := s.AcknowledgeSubscription(
+		ctx, tx, subscriptionID, currentAckState,
+		changeEventID, packageName, subscriptionProductId, purchaseToken,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to acknowledge subscription: %w", err)
+	}
+	updateFields["acknowledgement_state"] = refreshedState
+	return nil
+}
+
+func (s *playstoreSubscriptionService) updateExistingSubscription(
+	ctx context.Context,
+	tx *gorm.DB,
+	appUserID uuid.UUID,
+	existing *models.SubscriptionPurchaseV2,
+	subData *androidpublisher.SubscriptionPurchaseV2,
+	subscriptionProductId string,
+	notificationType rtdnModels.SubscriptionNotificationType,
+) error {
+	// 1. Create change event first
+	changeEventID, err := s.repo.CreateSubscriptionChangeEvent(ctx, tx, &models.SubscriptionChangeEvent{
+		SubscriptionID:   existing.ID,
+		NotificationType: notificationType,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create change event: %w", err)
+	}
+
+	// 3. Resolve all dependent models
+	updateFields := make(map[string]interface{})
+
+	updateFields["latest_order_id"] = subData.LatestOrderId
+	updateFields["subscription_state"] = models.SubscriptionState(subData.SubscriptionState)
+
+	// Handle state transitions
+	if err := s.processStateTransitions(
+		ctx, tx, existing, subData, changeEventID, updateFields,
+	); err != nil {
+		return err
+	}
+
+	// Handle context updates
+	if err := s.processContextUpdates(
+		ctx, tx, existing, subData, changeEventID, notificationType, updateFields,
+	); err != nil {
+		return err
+	}
+
+	// Handle linked purchase token
+	if err := s.processLinkedPurchaseTokenUpdate(
+		ctx, tx, existing, subData, changeEventID, updateFields,
+	); err != nil {
+		return err
+	}
+
+	// Handle line items
+	if _, err := s.ResolveLineItems(
+		ctx, tx, existing.ID, existing, subData, changeEventID, notificationType,
+	); err != nil {
+		return fmt.Errorf("failed to resolve line items: %w", err)
+	}
+
+	// 4. Perform final update if needed
+	if len(updateFields) > 0 {
+		if err := s.repo.UpdateSubscriptionFields(ctx, tx, existing.ID, updateFields); err != nil {
+			return fmt.Errorf("failed to update subscription: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// Helper functions:
+
+func (s *playstoreSubscriptionService) processStateTransitions(
+	ctx context.Context,
+	tx *gorm.DB,
+	existing *models.SubscriptionPurchaseV2,
+	subData *androidpublisher.SubscriptionPurchaseV2,
+	changeEventID uuid.UUID,
+	updateFields map[string]interface{},
+) error {
+	if err := s.RecordSubscriptionStateChange(
+		ctx, tx, existing.ID, existing, models.SubscriptionState(subData.SubscriptionState), changeEventID,
+	); err != nil {
+		return fmt.Errorf("failed to record subscription state change: %w", err)
+	}
+
+	// 2. Handle order ID transition
+	newOrderID, err := s.RecordOrderIDChange(
+		ctx, tx, existing.ID, existing, subData.LatestOrderId, changeEventID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to record order ID change: %w", err)
+	}
+
+	// Update the order ID if changed
+	if newOrderID != existing.LatestOrderId {
+		updateFields["latest_order_id"] = newOrderID
+	}
+
+	return nil
+}
+
+func (s *playstoreSubscriptionService) processContextUpdates(
+	ctx context.Context,
+	tx *gorm.DB,
+	existing *models.SubscriptionPurchaseV2,
+	subData *androidpublisher.SubscriptionPurchaseV2,
+	changeEventID uuid.UUID,
+	notificationType rtdnModels.SubscriptionNotificationType,
+	updateFields map[string]interface{},
+) error {
+	// Paused context
+	pausedCtxID, err := s.ResolvePausedContext(
+		ctx, tx, existing.ID, existing,
+		subData, changeEventID, notificationType,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve paused context: %w", err)
+	}
+	updateFields["subscription_paused_context_id"] = pausedCtxID
+
+	// Cancellation context
+	cancelCtxID, err := s.ResolveCancellationContext(
+		ctx, tx, existing.ID, existing,
+		subData, changeEventID, notificationType,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve cancellation context: %w", err)
+	}
+	updateFields["subscription_cancellation_context_id"] = cancelCtxID
+
+	return nil
+}
+
+func (s *playstoreSubscriptionService) processLinkedPurchaseTokenUpdate(
+	ctx context.Context,
+	tx *gorm.DB,
+	existing *models.SubscriptionPurchaseV2,
+	subData *androidpublisher.SubscriptionPurchaseV2,
+	changeEventID uuid.UUID,
+	updateFields map[string]interface{},
+) error {
+	if subData.LinkedPurchaseToken == "" {
+		return nil
+	}
+
+	log.Printf("🔗 Linked purchase token detected: %s", subData.LinkedPurchaseToken)
+	linkedFromSubID, err := s.ResolveLinkedPurchaseToken(
+		ctx, tx, subData, existing.ID, existing.PurchaseToken, changeEventID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve linked purchase token: %w", err)
+	}
+
+	updateFields["linked_from_subscription_id"] = linkedFromSubID
+	updateFields["linked_purchase_token"] = subData.LinkedPurchaseToken
+	return nil
 }

@@ -21,21 +21,41 @@ const (
 	SubscriptionStatePendingPurchaseCanceled SubscriptionState = "SUBSCRIPTION_STATE_PENDING_PURCHASE_CANCELED"
 )
 
-// SubscriptionState represents a single subscription state
-type SubscriptionStateModel struct {
-	ID    uuid.UUID         `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	State SubscriptionState `gorm:"type:varchar(50);not null;unique"`
+// IsValid checks if the subscription state is valid
+func (s SubscriptionState) IsValid() bool {
+	switch s {
+	case
+		SubscriptionStateUnspecified,
+		SubscriptionStatePending,
+		SubscriptionStateActive,
+		SubscriptionStatePaused,
+		SubscriptionStateInGracePeriod,
+		SubscriptionStateOnHold,
+		SubscriptionStateCanceled,
+		SubscriptionStateExpired,
+		SubscriptionStatePendingPurchaseCanceled:
+		return true
+	default:
+		return false
+	}
+}
+
+// String returns the string representation (implements fmt.Stringer)
+func (s SubscriptionState) String() string {
+	return string(s)
 }
 
 // SubscriptionStateTransitionHistory used for tracking subscription state changes over time
 type SubscriptionStateTransitionHistory struct {
-	ID              string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	SubscriptionID  uuid.UUID `gorm:"type:uuid;not null;index"` // Foreign key to SubscriptionPurchaseV2
-	PreviousStateID uuid.UUID `gorm:"type:uuid;not null;index"` // Foreign key to SubscriptionState (previous state)
-	CurrentStateID  uuid.UUID `gorm:"type:uuid;not null;index"` // Foreign key to SubscriptionState (current state)
-	ChangedAt       time.Time `gorm:"not null;autoCreateTime"`  // Timestamp when state changed
-	Reason          string    `gorm:"type:varchar(255);null"`   // Optional: Reason for state change (e.g., user action, system action)
-	ChangeEventID   uuid.UUID `gorm:"type:uuid;not null;index"`
+	ID             string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	SubscriptionID uuid.UUID `gorm:"type:uuid;not null;index"` // Foreign key to SubscriptionPurchaseV2
+
+	PreviousState *SubscriptionState `gorm:"type:varchar(50);index"`
+	CurrentState  SubscriptionState  `gorm:"type:varchar(50);not null;index"`
+	Reason        string             `gorm:"type:varchar(255);null"` // Optional: Reason for state change (e.g., user action, system action)
+
+	ChangeEventID uuid.UUID `gorm:"type:uuid;not null;index"`
+	ChangedAt     time.Time `gorm:"not null;autoCreateTime"` // Timestamp when state changed
 }
 
 // SubscriptionStateDetails holds additional information about each state

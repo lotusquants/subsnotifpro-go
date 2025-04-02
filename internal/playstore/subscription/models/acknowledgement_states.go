@@ -15,21 +15,33 @@ const (
 	AcknowledgementStateAcknowledged AcknowledgementState = "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED"
 )
 
-// AcknowledgementStateModel represents a single acknowledgement state
-type AcknowledgementStateModel struct {
-	ID    uuid.UUID            `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	State AcknowledgementState `gorm:"type:varchar(50);not null;unique"`
+// IsValid checks if the ack state is valid
+func (s AcknowledgementState) IsValid() bool {
+	switch s {
+	case
+		AcknowledgementStateUnspecified, AcknowledgementStatePending, AcknowledgementStateAcknowledged:
+		return true
+	default:
+		return false
+	}
+}
+
+// String returns the string representation (implements fmt.Stringer)
+func (s AcknowledgementState) String() string {
+	return string(s)
 }
 
 // AcknowledgementStateTransitionHistory used for tracking acknowledgement state changes over time
 type AcknowledgementStateTransitionHistory struct {
-	ID              string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	SubscriptionID  uuid.UUID `gorm:"type:uuid;not null;index"` // Foreign key to SubscriptionPurchaseV2
-	PreviousStateID uuid.UUID `gorm:"type:uuid;not null;index"` // Foreign key to AcknowledgementState (previous state)
-	CurrentStateID  uuid.UUID `gorm:"type:uuid;not null;index"` // Foreign key to AcknowledgementState (current state)
-	ChangedAt       time.Time `gorm:"not null;autoCreateTime"`  // Timestamp when state changed
-	Reason          string    `gorm:"type:varchar(255);null"`   // Optional: Reason for state change (e.g., user action, system action)
-	ChangeEventID   uuid.UUID `gorm:"type:uuid;not null;index"`
+	ID             string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	SubscriptionID uuid.UUID `gorm:"type:uuid;not null;index"` // Foreign key to SubscriptionPurchaseV2
+
+	PreviousState *AcknowledgementState `gorm:"type:varchar(50);index"`
+	CurrentState  AcknowledgementState  `gorm:"type:varchar(50);not null;index"`
+
+	Reason        string    `gorm:"type:varchar(255);null"` // Optional: Reason for state change (e.g., user action, system action)
+	ChangeEventID uuid.UUID `gorm:"type:uuid;not null;index"`
+	ChangedAt     time.Time `gorm:"not null;autoCreateTime"` // Timestamp when state changed
 }
 
 // AcknowledgementStateDetails holds additional information about each acknowledgement state
