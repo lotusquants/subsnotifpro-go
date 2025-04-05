@@ -2,14 +2,13 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"time"
 
+	"subsnotifpro-go/internal/playstore/api/dto"
 	rtdnModels "subsnotifpro-go/internal/playstore/rtdn/models"
 	"subsnotifpro-go/internal/playstore/subscription/models"
 
 	"github.com/google/uuid"
-	"google.golang.org/api/androidpublisher/v3"
 	"gorm.io/gorm"
 )
 
@@ -18,7 +17,7 @@ func (s *playstoreSubscriptionService) ResolveCancellationContext(
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
 	existing *models.SubscriptionPurchaseV2,
-	subData *androidpublisher.SubscriptionPurchaseV2,
+	subData *dto.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
 	notificationType rtdnModels.SubscriptionNotificationType,
 ) (*uuid.UUID, error) {
@@ -46,53 +45,54 @@ func (s *playstoreSubscriptionService) handleCancelled(
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
 	existing *models.SubscriptionCancellationContext,
-	subData *androidpublisher.SubscriptionPurchaseV2,
+	subData *dto.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
 ) (*uuid.UUID, error) {
 
-	cancelTimeStr := subData.CanceledStateContext.UserInitiatedCancellation.CancelTime
-	cancelTime, err := time.Parse(time.RFC3339Nano, cancelTimeStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid autoResumeTime format: %w", err)
-	}
+	// cancelTimeStr := subData.CanceledStateContext.UserInitiatedCancellation.CancelTime
+	// cancelTime, err := time.Parse(time.RFC3339Nano, cancelTimeStr)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("invalid autoResumeTime format: %w", err)
+	// }
 
-	cancelReason := models.CancellationReasonUserInitiated
-	var cancelSurvey *models.CancelSurveyReason
-	var userInput *string
+	// cancelReason := models.CancellationReasonUserInitiated
+	// var cancelSurvey *models.CancelSurveyReason
+	// var userInput *string
 
-	if survey := subData.CanceledStateContext.UserInitiatedCancellation.CancelSurveyResult; survey != nil {
-		s := models.CancelSurveyReason(survey.Reason)
-		cancelSurvey = &s
-		userInput = &survey.ReasonUserInput
-	}
+	// if survey := subData.CanceledStateContext.UserInitiatedCancellation.CancelSurveyResult; survey != nil {
+	// 	s := models.CancelSurveyReason(survey.Reason)
+	// 	cancelSurvey = &s
+	// 	userInput = &survey.ReasonUserInput
+	// }
 
-	if existing != nil {
-		existing.CancelTime = cancelTime
-		existing.CancellationReason = cancelReason
-		existing.CancelSurveyReason = cancelSurvey
-		existing.CancelSurveyUserInput = userInput
+	// if existing != nil {
+	// 	existing.CancelTime = cancelTime
+	// 	existing.CancellationReason = cancelReason
+	// 	existing.CancelSurveyReason = cancelSurvey
+	// 	existing.CancelSurveyUserInput = userInput
 
-		if err := s.repo.UpdateCancellationContext(ctx, tx, existing); err != nil {
-			return nil, err
-		}
-		history := buildCancellationHistory(existing, subscriptionID, changeEventID)
-		return &existing.ID, s.repo.InsertCancellationHistory(ctx, tx, history)
-	}
+	// 	if err := s.repo.UpdateCancellationContext(ctx, tx, existing); err != nil {
+	// 		return nil, err
+	// 	}
+	// 	history := buildCancellationHistory(existing, subscriptionID, changeEventID)
+	// 	return &existing.ID, s.repo.InsertCancellationHistory(ctx, tx, history)
+	// }
 
-	// First-time cancellation
-	newCtx := &models.SubscriptionCancellationContext{
-		ID:                    uuid.New(),
-		SubscriptionID:        subscriptionID,
-		CancelTime:            cancelTime,
-		CancellationReason:    cancelReason,
-		CancelSurveyReason:    cancelSurvey,
-		CancelSurveyUserInput: userInput,
-	}
-	if err := s.repo.InsertCancellationContext(ctx, tx, newCtx); err != nil {
-		return nil, err
-	}
-	history := buildCancellationHistory(newCtx, subscriptionID, changeEventID)
-	return &newCtx.ID, s.repo.InsertCancellationHistory(ctx, tx, history)
+	// // First-time cancellation
+	// newCtx := &models.SubscriptionCancellationContext{
+	// 	ID:                    uuid.New(),
+	// 	SubscriptionID:        subscriptionID,
+	// 	CancelTime:            cancelTime,
+	// 	CancellationReason:    cancelReason,
+	// 	CancelSurveyReason:    cancelSurvey,
+	// 	CancelSurveyUserInput: userInput,
+	// }
+	// if err := s.repo.InsertCancellationContext(ctx, tx, newCtx); err != nil {
+	// 	return nil, err
+	// }
+	// history := buildCancellationHistory(newCtx, subscriptionID, changeEventID)
+	// return &newCtx.ID, s.repo.InsertCancellationHistory(ctx, tx, history)
+	return nil, nil
 }
 
 func (s *playstoreSubscriptionService) handleResubscribed(

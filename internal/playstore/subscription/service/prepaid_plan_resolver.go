@@ -4,12 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
+	"subsnotifpro-go/internal/playstore/api/dto"
 	"subsnotifpro-go/internal/playstore/subscription/models"
 
 	"github.com/google/uuid"
-	"google.golang.org/api/androidpublisher/v3"
 	"gorm.io/gorm"
 )
 
@@ -19,7 +18,7 @@ func (s *playstoreSubscriptionService) createPrepaidPlan(
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
 	newLineItemModel *models.SubscriptionLineItem,
-	newLineItemData *androidpublisher.SubscriptionPurchaseLineItem,
+	newLineItemData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) (*uuid.UUID, error) {
 	if newLineItemData.PrepaidPlan == nil {
@@ -27,14 +26,14 @@ func (s *playstoreSubscriptionService) createPrepaidPlan(
 	}
 
 	// Parse time values
-	allowExtendAfterTime := parseTimeOrNil(newLineItemData.PrepaidPlan.AllowExtendAfterTime)
-	expiryTime := parseTimeOrNil(newLineItemData.ExpiryTime)
+	allowExtendAfterTime := newLineItemData.PrepaidPlan.AllowExtendAfterTime
+	expiryTime := newLineItemData.ExpiryTime
 
 	prepaidPlan := &models.PrepaidPlan{
 		SubscriptionID:       subscriptionID,
 		LineItemID:           newLineItemModel.ID,
-		ProductID:            newLineItemData.ProductId,
-		AllowExtendAfterTime: &allowExtendAfterTime,
+		ProductID:            newLineItemData.ProductID,
+		AllowExtendAfterTime: allowExtendAfterTime,
 		ExpiryTime:           expiryTime,
 	}
 
@@ -48,8 +47,8 @@ func (s *playstoreSubscriptionService) createPrepaidPlan(
 		SubscriptionID:              subscriptionID,
 		LineItemID:                  newLineItemModel.ID,
 		ChangeType:                  models.PrepaidPlanChangeCreated,
-		ProductID:                   newLineItemData.ProductId,
-		CurrentAllowExtendAfterTime: &allowExtendAfterTime,
+		ProductID:                   newLineItemData.ProductID,
+		CurrentAllowExtendAfterTime: allowExtendAfterTime,
 		CurrentExpiryTime:           &expiryTime,
 		ChangeEventID:               changeEventID,
 	}
@@ -66,7 +65,7 @@ func (s *playstoreSubscriptionService) updatePrepaidPlan(
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
 	existingLineItemModel *models.SubscriptionLineItem,
-	newLineItemData *androidpublisher.SubscriptionPurchaseLineItem,
+	newLineItemData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) (*uuid.UUID, error) {
 	if newLineItemData.PrepaidPlan == nil {
@@ -79,13 +78,9 @@ func (s *playstoreSubscriptionService) updatePrepaidPlan(
 
 	existingPlan := existingLineItemModel.PrepaidPlan
 
-	// Parse new time values
-	var newAllowExtendAfterTime *time.Time
-	if newLineItemData.PrepaidPlan.AllowExtendAfterTime != "" {
-		parsedTime := parseTimeOrNil(newLineItemData.PrepaidPlan.AllowExtendAfterTime)
-		newAllowExtendAfterTime = &parsedTime
-	}
-	newExpiryTime := parseTimeOrNil(newLineItemData.ExpiryTime)
+	newAllowExtendAfterTime := newLineItemData.PrepaidPlan.AllowExtendAfterTime
+
+	newExpiryTime := newLineItemData.ExpiryTime
 
 	// Prepare history record
 	history := models.PrepaidPlanHistory{

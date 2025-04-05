@@ -36,7 +36,6 @@ var AllModels = []interface{}{
 	&playstoreSubscriptionModels.AutoRenewingPlanHistory{},
 	&playstoreSubscriptionModels.SubscriptionCancellationContext{},
 	&playstoreSubscriptionModels.SubscriptionCancellationContextHistory{},
-	&playstoreSubscriptionModels.SubscriptionChangeEvent{},
 	&playstoreSubscriptionModels.DeferredItemReplacement{},
 	&playstoreSubscriptionModels.DeferredItemReplacementHistory{},
 	&playstoreSubscriptionModels.InstallmentPlan{},

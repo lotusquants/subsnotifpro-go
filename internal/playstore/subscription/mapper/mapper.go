@@ -1,12 +1,12 @@
 package mapper
 
 import (
+	"subsnotifpro-go/internal/playstore/api/dto"
 	"subsnotifpro-go/internal/playstore/subscription/models"
 	playstoreModels "subsnotifpro-go/internal/playstore/user/models"
 	"time"
 
 	"github.com/google/uuid"
-	"google.golang.org/api/androidpublisher/v3"
 )
 
 type SubscriptionUpdateParams struct {
@@ -26,12 +26,12 @@ type SubscriptionUpdateParams struct {
 	LineItems                   []models.SubscriptionLineItem
 }
 
-func BuildGoogleAccountModel(subData *androidpublisher.SubscriptionPurchaseV2) *playstoreModels.GoogleAccount {
-	var external *androidpublisher.ExternalAccountIdentifiers
-	var subscribeInfo *androidpublisher.SubscribeWithGoogleInfo
+func BuildGoogleAccountModel(subData *dto.SubscriptionPurchaseV2) *playstoreModels.GoogleAccount {
+	var external *dto.ExternalAccountIdentifiers
+	var subscribeInfo *dto.SubscribeWithGoogleInfo
 
 	if subData != nil {
-		external = subData.ExternalAccountIdentifiers
+		external = &subData.ExternalAccountIdentifiers
 		subscribeInfo = subData.SubscribeWithGoogleInfo
 	}
 
@@ -40,26 +40,19 @@ func BuildGoogleAccountModel(subData *androidpublisher.SubscriptionPurchaseV2) *
 	}
 
 	account := &playstoreModels.GoogleAccount{
-		ObfuscatedExternalAccountID: external.ObfuscatedExternalAccountId,
-		ExternalAccountID:           nullableString(external.ExternalAccountId),
-		ObfuscatedExternalProfileID: nullableString(external.ObfuscatedExternalProfileId),
+		ObfuscatedExternalAccountID: *external.ObfuscatedExternalAccountID,
+		ExternalAccountID:           external.ExternalAccountID,
+		ObfuscatedExternalProfileID: external.ObfuscatedExternalAccountID,
 	}
 
 	// Add optional fields from SubscribeWithGoogleInfo if present
 	if subscribeInfo != nil {
-		account.ProfileID = nullableString(subscribeInfo.ProfileId)
-		account.ProfileName = nullableString(subscribeInfo.ProfileName)
-		account.EmailAddress = nullableString(subscribeInfo.EmailAddress)
-		account.GivenName = nullableString(subscribeInfo.GivenName)
-		account.FamilyName = nullableString(subscribeInfo.FamilyName)
+		account.ProfileID = subscribeInfo.ProfileID
+		account.ProfileName = subscribeInfo.ProfileName
+		account.EmailAddress = subscribeInfo.EmailAddress
+		account.GivenName = subscribeInfo.GivenName
+		account.FamilyName = subscribeInfo.FamilyName
 	}
 
 	return account
-}
-
-func nullableString(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }

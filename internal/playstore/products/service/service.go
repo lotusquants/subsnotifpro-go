@@ -356,8 +356,8 @@ func (s *subscriptionCatalogService) GetCurrentOfferPhaseIndex(
 		phaseStartTime = phaseEndTime
 	}
 
-	// ❌ If No Valid Phase Exists, Return an Error
-	return nil, fmt.Errorf("no active subscription offer phase found for offer: %s", offerID)
+	// ❌ If No Valid Phase Exists, Return nil...no valid phase exists, use base plan price
+	return nil, nil
 }
 
 // ✅ GetRegionalOfferPhasePrice - Computes Offer Phase Price for a Specific Region

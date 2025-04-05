@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 
+	"subsnotifpro-go/internal/playstore/api/dto"
 	"subsnotifpro-go/internal/playstore/subscription/models"
 
 	"github.com/google/uuid"
-	"google.golang.org/api/androidpublisher/v3"
 	"gorm.io/gorm"
 )
 
@@ -17,7 +17,7 @@ func (s *playstoreSubscriptionService) createInstallmentPlan(
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
 	lineItem *models.SubscriptionLineItem,
-	planData *androidpublisher.SubscriptionPurchaseLineItem,
+	planData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) (*models.InstallmentPlan, error) {
 	if planData.AutoRenewingPlan == nil || planData.AutoRenewingPlan.InstallmentDetails == nil {
@@ -31,7 +31,7 @@ func (s *playstoreSubscriptionService) createInstallmentPlan(
 		AutoRenewingPlanID:              lineItem.AutoRenewingPlan.ID,
 		InitialCommittedPaymentsCount:   int(details.InitialCommittedPaymentsCount),
 		RemainingCommittedPaymentsCount: int(details.InitialCommittedPaymentsCount),
-		PendingCancellation:             details.PendingCancellation != nil,
+		PendingCancellation:             details.IsPendingCancellation,
 	}
 
 	// Handle optional subsequent payments
@@ -70,7 +70,7 @@ func (s *playstoreSubscriptionService) updateInstallmentPlan(
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
 	existingLineItem *models.SubscriptionLineItem,
-	planData *androidpublisher.SubscriptionPurchaseLineItem,
+	planData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) (*models.InstallmentPlan, error) {
 	if planData.AutoRenewingPlan == nil || planData.AutoRenewingPlan.InstallmentDetails == nil {
@@ -95,7 +95,7 @@ func (s *playstoreSubscriptionService) updateInstallmentPlan(
 		InitialCommittedPaymentsCount:    int(details.InitialCommittedPaymentsCount),
 		RemainingCommittedPaymentsCount:  int(details.RemainingCommittedPaymentsCount),
 		SubsequentCommittedPaymentsCount: subsequentCountPtr,
-		PendingCancellation:              details.PendingCancellation != nil,
+		PendingCancellation:              details.IsPendingCancellation,
 	}
 
 	// Create history entry before updating

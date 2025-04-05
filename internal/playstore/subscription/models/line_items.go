@@ -22,20 +22,12 @@ const (
 	LineItemStatusCanceled LineItemStatus = "CANCELED"
 )
 
-type LineItemType string
-
-const (
-	LineItemTypeBase  LineItemType = "BASE"
-	LineItemTypeAddOn LineItemType = "ADD_ON"
-)
-
 // SubscriptionLineItem represents an individual component (base plan or add-on) of a subscription purchase.
 type SubscriptionLineItem struct {
 	ID uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 
 	// 🔗 FK to SubscriptionPurchaseV2
-	SubscriptionID uuid.UUID               `gorm:"type:uuid;not null;index;constraint:OnDelete:CASCADE"`
-	Subscription   *SubscriptionPurchaseV2 `gorm:"foreignKey:SubscriptionID"`
+	SubscriptionID uuid.UUID `gorm:"type:uuid;not null;index"`
 
 	// 📦 Product/Plan info
 	ProductID string `gorm:"type:varchar(100);not null;index"`
@@ -43,7 +35,6 @@ type SubscriptionLineItem struct {
 	ExpiryTime time.Time      `gorm:"not null;index"`
 	PlanType   PlanType       `gorm:"type:varchar(20);not null;index"` // AUTO_RENEWING or PREPAID
 	Status     LineItemStatus `gorm:"type:varchar(20);not null;index;default:ACTIVE"`
-	ItemType   LineItemType   `gorm:"type:varchar(20);not null;index"` // BASE or ADD_ON
 
 	// 🧩 Optional Linked Entities
 	AutoRenewingPlanID *uuid.UUID        `gorm:"type:uuid;index;constraint:OnDelete:SET NULL"`
@@ -62,16 +53,23 @@ type SubscriptionLineItem struct {
 	SignupPromotion   *SignupPromotion `gorm:"foreignKey:SignupPromotionID"`
 
 	// 🔄 Historical changes can be logged in SubscriptionLineItemHistory
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	CreatedAt time.Time      `gorm:"autoCreateTime"`
+	UpdatedAt time.Time      `gorm:"autoUpdateTime"`
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 }
 
 type SubscriptionLineItemHistory struct {
-	ID uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	ID             uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	SubscriptionID uuid.UUID `gorm:"type:uuid;not null;index"`
 
 	LineItemID uuid.UUID `gorm:"type:uuid;not null;index"`
 	PlanType   PlanType  `gorm:"type:varchar(20);not null"`
+
+	// AutoRenewingPlanID        *uuid.UUID `gorm:"type:uuid;index"`
+	// PrepaidPlanID             *uuid.UUID `gorm:"type:uuid;index"`
+	// OfferDetailsID            *uuid.UUID `gorm:"type:uuid;index"`
+	// DeferredItemReplacementID *uuid.UUID `gorm:"type:uuid;index"`
+	// SignupPromotionID         *uuid.UUID `gorm:"type:uuid;index"`
 
 	PreviousExpiryTime *time.Time `gorm:"null"`
 	CurrentExpiryTime  time.Time  `gorm:"not null"`
@@ -79,7 +77,7 @@ type SubscriptionLineItemHistory struct {
 	PreviousStatus *LineItemStatus `gorm:"type:varchar(20);null"`
 	CurrentStatus  LineItemStatus  `gorm:"type:varchar(20);not null"`
 
-	ChangedAt     time.Time
+	ChangedAt     time.Time `gorm:"autoCreateTime"`
 	ChangeEventID uuid.UUID `gorm:"type:uuid;not null;index"` // RTDN/Trigger ID
 	Reason        string    `gorm:"type:varchar(255);null"`   // e.g. "Renewed", "Extended", "Replaced", "Expired", "New"
 }

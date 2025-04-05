@@ -2,15 +2,14 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"time"
 
+	"subsnotifpro-go/internal/playstore/api/dto"
 	rtdnModels "subsnotifpro-go/internal/playstore/rtdn/models"
 	"subsnotifpro-go/internal/playstore/subscription/models"
 
 	"github.com/google/uuid"
-	"google.golang.org/api/androidpublisher/v3"
 	"gorm.io/gorm"
 )
 
@@ -19,7 +18,7 @@ func (s *playstoreSubscriptionService) ResolvePausedContext(
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
 	existing *models.SubscriptionPurchaseV2,
-	subData *androidpublisher.SubscriptionPurchaseV2,
+	subData *dto.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
 	notificationType rtdnModels.SubscriptionNotificationType,
 ) (*uuid.UUID, error) {
@@ -48,22 +47,14 @@ func (s *playstoreSubscriptionService) handlePauseScheduleChanged(
 	tx *gorm.DB,
 	existing *models.SubscriptionPausedContext,
 	subscriptionID uuid.UUID,
-	subData *androidpublisher.SubscriptionPurchaseV2,
+	subData *dto.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
 
 ) (*uuid.UUID, error) {
 
-	autoPauseTimeStr := subData.LineItems[0].ExpiryTime
-	autoPauseTime, err := time.Parse(time.RFC3339Nano, autoPauseTimeStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid autoResumeTime format: %w", err)
-	}
+	autoPauseTime := subData.LineItems[0].ExpiryTime
 
-	autoResumeTimeStr := subData.PausedStateContext.AutoResumeTime
-	autoResumeTime, err := time.Parse(time.RFC3339Nano, autoResumeTimeStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid autoResumeTime format: %w", err)
-	}
+	autoResumeTime := subData.PausedStateContext.AutoResumeTime
 
 	if existing != nil {
 		existing.ScheduledAt = time.Now()
@@ -106,7 +97,7 @@ func (s *playstoreSubscriptionService) handlePaused(
 	tx *gorm.DB,
 	existing *models.SubscriptionPausedContext,
 	subscriptionID uuid.UUID,
-	subData *androidpublisher.SubscriptionPurchaseV2,
+	subData *dto.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
 
 ) (*uuid.UUID, error) {
@@ -114,11 +105,7 @@ func (s *playstoreSubscriptionService) handlePaused(
 
 	if existing == nil {
 
-		autoResumeTimeStr := subData.PausedStateContext.AutoResumeTime
-		autoResumeTime, err := time.Parse(time.RFC3339Nano, autoResumeTimeStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid autoResumeTime format: %w", err)
-		}
+		autoResumeTime := subData.PausedStateContext.AutoResumeTime
 
 		// Fallback: Create new context directly if one doesn't exist
 		newCtx := &models.SubscriptionPausedContext{

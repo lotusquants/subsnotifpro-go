@@ -12,6 +12,8 @@ type OfferDetails struct {
 	SubscriptionID uuid.UUID `gorm:"type:uuid;not null;index"`
 	LineItemID     uuid.UUID `gorm:"type:uuid;not null;index"`
 
+	// PackageName string    `gorm:"type:varchar(100);not null;index"`
+	// ProductID   string    `gorm:"type:varchar(100);not null;index"`
 	BasePlanID string    `gorm:"type:varchar(100);not null;index"`
 	OfferID    *string   `gorm:"type:varchar(100);null;index"`
 	OfferTags  *[]string `gorm:"type:text;null"`
@@ -32,13 +34,15 @@ type OfferDetailsHistory struct {
 	SubscriptionID uuid.UUID `gorm:"type:uuid;not null;index"`
 	LineItemID     uuid.UUID `gorm:"type:uuid;not null;index"`
 
+	// PackageName string  `gorm:"type:varchar(100);not null;index"`
+	// ProductID   string  `gorm:"type:varchar(100);not null;index"`
 	BasePlanID string  `gorm:"type:varchar(100);not null"`
 	OfferID    *string `gorm:"type:varchar(100);null"`
 
 	OfferTags         *[]string `gorm:"type:text;null"`
 	PreviousOfferTags *[]string `gorm:"type:text;null"`
 
-	PreviousBasePlanID *string `gorm:"type:varchar(100);not null"`
+	PreviousBasePlanID *string `gorm:"type:varchar(100);null"`
 	PreviousOfferID    *string `gorm:"type:varchar(100);null"`
 
 	PreviousOfferPhaseIndex *int `gorm:"type:int;null"`

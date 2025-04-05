@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"subsnotifpro-go/internal/playstore/api/dto"
 	"subsnotifpro-go/internal/playstore/subscription/models"
 
 	"github.com/google/uuid"
-	"google.golang.org/api/androidpublisher/v3"
 	"gorm.io/gorm"
 )
 
@@ -15,7 +15,7 @@ func (s *playstoreSubscriptionService) createPriceChangeDetails(
 	ctx context.Context,
 	tx *gorm.DB,
 	lineItem *models.SubscriptionLineItem,
-	planData *androidpublisher.SubscriptionPurchaseLineItem,
+	planData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) (*models.SubscriptionItemPriceChangeDetails, error) {
 	if planData.AutoRenewingPlan == nil || planData.AutoRenewingPlan.PriceChangeDetails == nil {
@@ -23,7 +23,7 @@ func (s *playstoreSubscriptionService) createPriceChangeDetails(
 	}
 
 	details := planData.AutoRenewingPlan.PriceChangeDetails
-	expectedChangeTime := parseTimeOrNil(details.ExpectedNewPriceChargeTime)
+	expectedChangeTime := details.ExpectedNewPriceChargeTime
 
 	// Convert API enums to our model enums
 	priceChangeMode := models.PriceChangeMode(details.PriceChangeMode)
@@ -74,7 +74,7 @@ func (s *playstoreSubscriptionService) updatePriceChangeDetails(
 	ctx context.Context,
 	tx *gorm.DB,
 	existingLineItem *models.SubscriptionLineItem,
-	planData *androidpublisher.SubscriptionPurchaseLineItem,
+	planData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) (*models.SubscriptionItemPriceChangeDetails, error) {
 	if planData.AutoRenewingPlan == nil || planData.AutoRenewingPlan.PriceChangeDetails == nil {
@@ -88,7 +88,7 @@ func (s *playstoreSubscriptionService) updatePriceChangeDetails(
 	existing := existingLineItem.AutoRenewingPlan.PriceChangeDetails
 
 	details := planData.AutoRenewingPlan.PriceChangeDetails
-	expectedChangeTime := parseTimeOrNil(details.ExpectedNewPriceChargeTime)
+	expectedChangeTime := details.ExpectedNewPriceChargeTime
 	newPrice := models.Money{
 		CurrencyCode: details.NewPrice.CurrencyCode,
 		Units:        details.NewPrice.Units,

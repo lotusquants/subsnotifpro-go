@@ -23,14 +23,14 @@ func (s *playstoreSubscriptionService) RecordOrderIDChange(
 	}
 
 	// If no change, return as is
-	if existing.LatestOrderId == newOrderID {
+	if existing.LatestOrderID == newOrderID {
 		return newOrderID, nil
 	}
 
 	// Log transition history
 	history := models.SubscriptionOrderIdTransitionHistory{
 		SubscriptionID:  subscriptionID,
-		PreviousOrderID: existing.LatestOrderId,
+		PreviousOrderID: existing.LatestOrderID,
 		NewOrderID:      newOrderID,
 		Reason:          "Order ID changed by Google RTDN",
 		ChangeEventID:   changeEventID,

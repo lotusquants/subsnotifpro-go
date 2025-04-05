@@ -11,7 +11,7 @@ func registerGooglePlayRoutes(router *gin.Engine, deps *RouteDependencies) {
 
 	// 🟢 RTDN Webhooks and DLQ
 	group.POST("/rtdn/webhooks", func(c *gin.Context) {
-		deps.PlaystoreRTDNHandler.WebhookHandler(c, deps.RabbitMQChannel)
+		deps.PlaystoreRTDNHandler.WebhookHandler(c)
 	})
 	group.GET("/rtdn/dlq/size", playstoreRTDNHandler.GetDLQSize)
 	group.POST("/rtdn/dlq/retry", playstoreRTDNHandler.RetryDLQHandler)

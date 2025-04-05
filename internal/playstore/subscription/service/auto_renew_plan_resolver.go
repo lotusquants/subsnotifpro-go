@@ -4,11 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"subsnotifpro-go/internal/playstore/api/dto"
 	"subsnotifpro-go/internal/playstore/subscription/models"
-	"time"
 
 	"github.com/google/uuid"
-	"google.golang.org/api/androidpublisher/v3"
 	"gorm.io/gorm"
 )
 
@@ -17,23 +16,26 @@ func (s *playstoreSubscriptionService) createAutoRenewingPlan(
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
 	newLineItemModel *models.SubscriptionLineItem,
-	newLineItemData *androidpublisher.SubscriptionPurchaseLineItem,
-	recurringPrice models.Money,
+	newLineItemData *dto.LineItem,
+
 	changeEventID uuid.UUID,
 ) (*uuid.UUID, error) {
 	if newLineItemData.AutoRenewingPlan == nil {
 		return nil, nil
 	}
 
-	expiryTime, err := time.Parse(time.RFC3339Nano, newLineItemData.ExpiryTime)
-	if err != nil {
-		return nil, fmt.Errorf("invalid expiry time format: %w", err)
+	recurringPrice := models.Money{
+		CurrencyCode: newLineItemData.AutoRenewingPlan.RecurringPrice.CurrencyCode,
+		Units:        newLineItemData.AutoRenewingPlan.RecurringPrice.Units,
+		Nanos:        newLineItemData.AutoRenewingPlan.RecurringPrice.Nanos,
 	}
+
+	expiryTime := newLineItemData.ExpiryTime
 
 	autoPlan := &models.AutoRenewingPlan{
 		SubscriptionID:   subscriptionID,
 		LineItemID:       newLineItemModel.ID,
-		ProductID:        newLineItemData.ProductId,
+		ProductID:        newLineItemData.ProductID,
 		ExpiryTime:       expiryTime,
 		AutoRenewEnabled: newLineItemData.AutoRenewingPlan.AutoRenewEnabled,
 		RecurringPrice:   recurringPrice,
@@ -71,7 +73,7 @@ func (s *playstoreSubscriptionService) createAutoRenewingPlan(
 		LineItemID:              newLineItemModel.ID,
 		AutoRenewingPlanID:      autoPlan.ID,
 		ChangeType:              models.AutoRenewingPlanChangeCreated,
-		ProductID:               newLineItemData.ProductId,
+		ProductID:               newLineItemData.ProductID,
 		CurrentExpiryTime:       &expiryTime,
 		CurrentAutoRenewEnabled: &newLineItemData.AutoRenewingPlan.AutoRenewEnabled,
 		PriceChangeDetailsID:    autoPlan.PriceChangeDetailsID,
@@ -92,8 +94,7 @@ func (s *playstoreSubscriptionService) updateAutoRenewingPlan(
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
 	existingLineItemModel *models.SubscriptionLineItem,
-	newLineItemData *androidpublisher.SubscriptionPurchaseLineItem,
-	recurringPrice models.Money,
+	newLineItemData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) (*uuid.UUID, error) {
 	if newLineItemData.AutoRenewingPlan == nil {
@@ -106,28 +107,18 @@ func (s *playstoreSubscriptionService) updateAutoRenewingPlan(
 	}
 	existingPlan := existingLineItemModel.AutoRenewingPlan
 
-	// Parse new expiry time
-	newExpiryTime, err := time.Parse(time.RFC3339Nano, newLineItemData.ExpiryTime)
-	if err != nil {
-		return nil, fmt.Errorf("invalid expiry time format: %w", err)
+	recurringPrice := models.Money{
+		CurrencyCode: newLineItemData.AutoRenewingPlan.RecurringPrice.CurrencyCode,
+		Units:        newLineItemData.AutoRenewingPlan.RecurringPrice.Units,
+		Nanos:        newLineItemData.AutoRenewingPlan.RecurringPrice.Nanos,
 	}
 
-	// Initialize history record with previous values
-	history := models.AutoRenewingPlanHistory{
-		SubscriptionID:           subscriptionID,
-		LineItemID:               existingLineItemModel.ID,
-		AutoRenewingPlanID:       existingLineItemModel.AutoRenewingPlan.ID,
-		ProductID:                existingPlan.ProductID,
-		CurrentExpiryTime:        &newExpiryTime,
-		CurrentAutoRenewEnabled:  &newLineItemData.AutoRenewingPlan.AutoRenewEnabled,
-		CurrentPrice:             &recurringPrice,
-		PreviousExpiryTime:       &existingPlan.ExpiryTime,
-		PreviousAutoRenewEnabled: &existingPlan.AutoRenewEnabled,
-		PreviousPrice:            &existingPlan.RecurringPrice,
-		PriceChangeDetailsID:     existingPlan.PriceChangeDetailsID,
-		InstallmentPlanID:        existingPlan.InstallmentPlanID,
-		ChangeEventID:            changeEventID,
-	}
+	// Parse new expiry time
+	newExpiryTime := newLineItemData.ExpiryTime
+
+	previousExpiryTime := existingPlan.ExpiryTime
+	previousAutoRenewEnabled := existingPlan.AutoRenewEnabled
+	previousPrice := existingPlan.RecurringPrice
 
 	changes := make(map[string]interface{})
 	changeType := models.AutoRenewingPlanChangeRenewed
@@ -135,18 +126,18 @@ func (s *playstoreSubscriptionService) updateAutoRenewingPlan(
 	// Check and track changes for each field
 	if !existingPlan.ExpiryTime.Equal(newExpiryTime) {
 		changes["expiry_time"] = newExpiryTime
-		history.CurrentExpiryTime = &newExpiryTime
+
 		changeType = models.AutoRenewingPlanChangeRenewed
 	}
 
 	if existingPlan.AutoRenewEnabled != newLineItemData.AutoRenewingPlan.AutoRenewEnabled {
 		changes["auto_renew_enabled"] = newLineItemData.AutoRenewingPlan.AutoRenewEnabled
-		history.CurrentAutoRenewEnabled = &newLineItemData.AutoRenewingPlan.AutoRenewEnabled
+
 	}
 
 	if existingPlan.RecurringPrice != recurringPrice {
 		changes["recurring_price"] = recurringPrice
-		history.CurrentPrice = &recurringPrice
+
 		changeType = models.AutoRenewingPlanChangePriceChange
 	}
 
@@ -211,8 +202,24 @@ func (s *playstoreSubscriptionService) updateAutoRenewingPlan(
 		return nil, fmt.Errorf("failed to update auto renewing plan: %w", err)
 	}
 
-	// Set the final change type and create history
-	history.ChangeType = changeType
+	// Initialize history record with previous values
+	history := models.AutoRenewingPlanHistory{
+		SubscriptionID:           subscriptionID,
+		LineItemID:               existingLineItemModel.ID,
+		AutoRenewingPlanID:       existingLineItemModel.AutoRenewingPlan.ID,
+		ProductID:                existingPlan.ProductID,
+		CurrentExpiryTime:        &newExpiryTime,
+		CurrentAutoRenewEnabled:  &newLineItemData.AutoRenewingPlan.AutoRenewEnabled,
+		CurrentPrice:             &recurringPrice,
+		PreviousExpiryTime:       &previousExpiryTime,
+		PreviousAutoRenewEnabled: &previousAutoRenewEnabled,
+		PreviousPrice:            &previousPrice,
+		PriceChangeDetailsID:     existingPlan.PriceChangeDetailsID,
+		InstallmentPlanID:        existingPlan.InstallmentPlanID,
+		ChangeEventID:            changeEventID,
+		ChangeType:               changeType,
+	}
+
 	if err := tx.Create(&history).Error; err != nil {
 		return nil, fmt.Errorf("failed to create auto renewing plan history: %w", err)
 	}

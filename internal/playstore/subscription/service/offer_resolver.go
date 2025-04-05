@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"subsnotifpro-go/internal/playstore/api/dto"
 	"subsnotifpro-go/internal/playstore/subscription/models"
 	"time"
 
 	"github.com/google/uuid"
-	"google.golang.org/api/androidpublisher/v3"
 	"gorm.io/gorm"
 )
 
@@ -17,9 +17,9 @@ func (s *playstoreSubscriptionService) createOfferDetails(
 	ctx context.Context,
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
-	subscriptionData models.SubscriptionPurchaseV2,
+	existingSubscription *models.SubscriptionPurchaseV2,
 	newLineItemModel *models.SubscriptionLineItem,
-	newLineItemData *androidpublisher.SubscriptionPurchaseLineItem,
+	newLineItemData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) (*uuid.UUID, error) {
 	if newLineItemData.OfferDetails == nil {
@@ -27,11 +27,11 @@ func (s *playstoreSubscriptionService) createOfferDetails(
 	}
 
 	offer := newLineItemData.OfferDetails
-	packageName := subscriptionData.PackageName
-	productID := newLineItemData.ProductId
-	basePlanID := offer.BasePlanId
-	regionCode := subscriptionData.RegionCode
-	startTime := subscriptionData.StartTime
+	packageName := existingSubscription.PackageName
+	productID := newLineItemData.ProductID
+	basePlanID := offer.BasePlanID
+	regionCode := existingSubscription.RegionCode
+	startTime := existingSubscription.StartTime
 
 	// 1. Get base plan price (required for both base and discounted offers)
 	basePlanPrice, err := s.GetRegionalBasePlanPrice(
@@ -59,8 +59,8 @@ func (s *playstoreSubscriptionService) createOfferDetails(
 	}
 
 	// For discounted offers, get phase information
-	if offer.OfferId != "" {
-		offerID = &offer.OfferId
+	if offer.OfferID != "" {
+		offerID = &offer.OfferID
 
 		// Get current phase index
 		phaseIndex, err := s.GetCurrentOfferPhaseIndex(
@@ -68,7 +68,7 @@ func (s *playstoreSubscriptionService) createOfferDetails(
 			packageName,
 			productID,
 			basePlanID,
-			offer.OfferId,
+			offer.OfferID,
 			startTime,
 			time.Now(),
 		)
@@ -77,20 +77,24 @@ func (s *playstoreSubscriptionService) createOfferDetails(
 		}
 		currentPhase = phaseIndex
 
-		// Get phase-specific price
-		phasePrice, err := s.GetRegionalOfferPhasePrice(
-			ctx,
-			packageName,
-			productID,
-			basePlanID,
-			offer.OfferId,
-			*phaseIndex,
-			regionCode,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get offer phase price: %w", err)
+		if phaseIndex != nil {
+			// Get phase-specific price
+			phasePrice, err := s.GetRegionalOfferPhasePrice(
+				ctx,
+				packageName,
+				productID,
+				offer.BasePlanID,
+				offer.OfferID,
+				*phaseIndex,
+				regionCode,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get offer phase price: %w", err)
+			}
+			currentPrice = *phasePrice
+		} else {
+			currentPrice = *basePlanPrice
 		}
-		currentPrice = *phasePrice
 	} else {
 		// For base plans without offers, use base price
 		currentPrice = *basePlanPrice
@@ -98,8 +102,10 @@ func (s *playstoreSubscriptionService) createOfferDetails(
 
 	// Create the offer details record
 	offerDetails := &models.OfferDetails{
-		SubscriptionID:         subscriptionID,
-		LineItemID:             newLineItemModel.ID,
+		SubscriptionID: subscriptionID,
+		LineItemID:     newLineItemModel.ID,
+		// PackageName:            packageName,
+		// ProductID:              productID,
 		BasePlanID:             basePlanID,
 		OfferID:                offerID,
 		OfferTags:              offerTags,
@@ -114,9 +120,11 @@ func (s *playstoreSubscriptionService) createOfferDetails(
 
 	// Create history entry
 	history := models.OfferDetailsHistory{
-		OfferDetailsID:         offerDetails.ID,
-		SubscriptionID:         subscriptionID,
-		LineItemID:             newLineItemModel.ID,
+		OfferDetailsID: offerDetails.ID,
+		SubscriptionID: subscriptionID,
+		LineItemID:     newLineItemModel.ID,
+		// PackageName:            packageName,
+		// ProductID:              productID,
 		BasePlanID:             basePlanID,
 		OfferID:                offerID,
 		OfferTags:              offerTags,
@@ -138,9 +146,9 @@ func (s *playstoreSubscriptionService) updateOfferDetails(
 	ctx context.Context,
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
-	subscriptionData models.SubscriptionPurchaseV2,
+	existingSubscription *models.SubscriptionPurchaseV2,
 	existingLineItemModel *models.SubscriptionLineItem,
-	newLineItemData *androidpublisher.SubscriptionPurchaseLineItem,
+	newLineItemData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) (*uuid.UUID, error) {
 	if newLineItemData.OfferDetails == nil {
@@ -154,17 +162,18 @@ func (s *playstoreSubscriptionService) updateOfferDetails(
 	existing := existingLineItemModel.OfferDetails
 
 	offer := newLineItemData.OfferDetails
-	packageName := subscriptionData.PackageName
-	productID := newLineItemData.ProductId
-	regionCode := subscriptionData.RegionCode
-	startTime := subscriptionData.StartTime
+
+	packageName := existingSubscription.PackageName
+	productID := newLineItemData.ProductID
+	regionCode := existingSubscription.RegionCode
+	startTime := existingSubscription.StartTime
 
 	// 1. Get base plan price (required for both base and discounted offers)
 	basePlanPrice, err := s.GetRegionalBasePlanPrice(
 		ctx,
 		packageName,
 		productID,
-		offer.BasePlanId,
+		offer.BasePlanID,
 		regionCode,
 	)
 	if err != nil {
@@ -185,16 +194,16 @@ func (s *playstoreSubscriptionService) updateOfferDetails(
 	}
 
 	// For discounted offers, get phase information
-	if offer.OfferId != "" {
-		offerID = &offer.OfferId
+	if offer.OfferID != "" {
+		offerID = &offer.OfferID
 
 		// Get current phase index
 		phaseIndex, err := s.GetCurrentOfferPhaseIndex(
 			ctx,
 			packageName,
 			productID,
-			offer.BasePlanId,
-			offer.OfferId,
+			offer.BasePlanID,
+			offer.OfferID,
 			startTime,
 			time.Now(),
 		)
@@ -203,20 +212,25 @@ func (s *playstoreSubscriptionService) updateOfferDetails(
 		}
 		currentPhase = phaseIndex
 
-		// Get phase-specific price
-		phasePrice, err := s.GetRegionalOfferPhasePrice(
-			ctx,
-			packageName,
-			productID,
-			offer.BasePlanId,
-			offer.OfferId,
-			*phaseIndex,
-			regionCode,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get offer phase price: %w", err)
+		if phaseIndex != nil {
+			// Get phase-specific price
+			phasePrice, err := s.GetRegionalOfferPhasePrice(
+				ctx,
+				packageName,
+				productID,
+				offer.BasePlanID,
+				offer.OfferID,
+				*phaseIndex,
+				regionCode,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get offer phase price: %w", err)
+			}
+			currentPrice = *phasePrice
+		} else {
+			currentPrice = *basePlanPrice
 		}
-		currentPrice = *phasePrice
+
 	} else {
 		// For base plans without offers, use base price
 		currentPrice = *basePlanPrice
@@ -224,7 +238,7 @@ func (s *playstoreSubscriptionService) updateOfferDetails(
 
 	// Prepare updates
 	updates := map[string]interface{}{
-		"base_plan_id":              offer.BasePlanId,
+		"base_plan_id":              offer.BasePlanID,
 		"offer_id":                  offerID,
 		"offer_tags":                offerTags,
 		"base_plan_price":           *basePlanPrice,
@@ -234,10 +248,12 @@ func (s *playstoreSubscriptionService) updateOfferDetails(
 
 	// Create history entry before updating
 	history := models.OfferDetailsHistory{
-		OfferDetailsID:          existing.ID,
-		SubscriptionID:          subscriptionID,
-		LineItemID:              existingLineItemModel.ID,
-		BasePlanID:              offer.BasePlanId,
+		OfferDetailsID: existing.ID,
+		SubscriptionID: subscriptionID,
+		LineItemID:     existingLineItemModel.ID,
+		// PackageName:             packageName,
+		// ProductID:               productID,
+		BasePlanID:              offer.BasePlanID,
 		OfferID:                 offerID,
 		OfferTags:               offerTags,
 		PreviousOfferPhaseIndex: existing.CurrentOfferPhaseIndex,
@@ -282,8 +298,10 @@ func (s *playstoreSubscriptionService) expireOfferDetails(
 
 	// Create comprehensive history before soft deleting
 	history := models.OfferDetailsHistory{
-		OfferDetailsID:          offer.ID,
-		SubscriptionID:          offer.SubscriptionID,
+		OfferDetailsID: offer.ID,
+		SubscriptionID: offer.SubscriptionID,
+		// PackageName:             expiredLineItem.OfferDetails.PackageName,
+		// ProductID:               expiredLineItem.ProductID,
 		LineItemID:              offer.LineItemID,
 		BasePlanID:              offer.BasePlanID,
 		CurrentBasePlanPrice:    offer.BasePlanPrice,

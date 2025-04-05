@@ -12,11 +12,12 @@ import (
 // SubscriptionPurchaseV2 represents a subscription purchase object in Google Play
 // SubscriptionPurchaseV2 (Stores only the latest state)
 type SubscriptionPurchaseV2 struct {
-	ID            uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	PackageName   string    `gorm:"type:varchar(50);not null;index"`
-	StartTime     time.Time `gorm:"not null;index"`
-	LatestOrderId string    `gorm:"type:varchar(50);not null;index"`
-	PurchaseToken string    `gorm:"type:varchar(255);not null;uniqueIndex"`
+	ID             uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	PackageName    string    `gorm:"type:varchar(50);not null;index"`
+	StartTime      time.Time `gorm:"not null;index"`
+	LatestOrderID  string    `gorm:"type:varchar(50);not null;index"`
+	PurchaseToken  string    `gorm:"type:varchar(255);not null;uniqueIndex"`
+	IsTestPurchase bool      `gorm:"default:false"`
 
 	UserID uuid.UUID           `gorm:"type:uuid;not null;index;constraint:OnDelete:CASCADE"`
 	User   *userModels.AppUser `gorm:"foreignKey:UserID"`

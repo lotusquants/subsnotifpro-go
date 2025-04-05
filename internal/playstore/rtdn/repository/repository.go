@@ -3,111 +3,113 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"subsnotifpro-go/internal/logger"
+	"subsnotifpro-go/internal/pkg/contextutil"
 	"subsnotifpro-go/internal/playstore/rtdn/models"
 
-	"github.com/sirupsen/logrus"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 // RTDNRepository defines the interface for RTDN repository
 type RTDNRepository interface {
-	SaveWebhookEvent(ctx context.Context, tx *gorm.DB, event *models.GooglePlayWebhookEvent) error
-	GetPendingEvents(ctx context.Context, tx *gorm.DB, limit int) ([]models.GooglePlayWebhookEvent, error)
-	UpdateWebhookStatus(ctx context.Context, tx *gorm.DB, eventID string, status string) error
-	IncrementRetryCount(ctx context.Context, tx *gorm.DB, eventID string) error
-	MoveToDeadLetterQueue(ctx context.Context, tx *gorm.DB, eventID string) error
-
-	WithTransaction(ctx context.Context, fn func(tx *gorm.DB) error) error
+	WithTransaction(ctx context.Context, fn func(context.Context) error) error
+	Create(ctx context.Context, event *models.GooglePlayWebhookEvent) error
+	UpdateStatus(ctx context.Context, id uuid.UUID, status models.WebhookEventStatus, errorMsg string) error
+	IncrementRetryCount(ctx context.Context, eventID uuid.UUID) error
+	Exists(ctx context.Context, id uuid.UUID) (bool, error)
 }
 
-// ✅ Struct with Injected Database Instance
 type rtdnRepository struct {
 	db *gorm.DB
 }
 
-// ✅ Constructor Function to Inject DB
 func NewRTDNRepository(db *gorm.DB) RTDNRepository {
 	return &rtdnRepository{db: db}
 }
 
-func (r *rtdnRepository) WithTransaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
-	return r.db.WithContext(ctx).Transaction(fn)
-}
-
-// -------------------------
-// 🚀 Save Webhook Event (Transaction)
-// -------------------------
-func (r *rtdnRepository) SaveWebhookEvent(ctx context.Context, tx *gorm.DB, event *models.GooglePlayWebhookEvent) error {
-	if tx == nil {
-		tx = r.db.WithContext(ctx)
-	} else {
-		tx = tx.WithContext(ctx)
-	}
-	return tx.Create(event).Error
-}
-
-// -------------------------
-// 🚀 Get Pending Events
-// -------------------------
-func (r *rtdnRepository) GetPendingEvents(ctx context.Context, tx *gorm.DB, limit int) ([]models.GooglePlayWebhookEvent, error) {
-	if tx == nil {
-		tx = r.db.WithContext(ctx)
-	} else {
-		tx = tx.WithContext(ctx)
+func (r *rtdnRepository) WithTransaction(ctx context.Context, fn func(context.Context) error) error {
+	tx := r.db.Begin().WithContext(ctx)
+	if tx.Error != nil {
+		return fmt.Errorf("failed to begin transaction: %w", tx.Error)
 	}
 
-	var events []models.GooglePlayWebhookEvent
-	err := tx.
-		Where("status = ?", "pending").
-		Order("retry_count DESC, created_at ASC").
-		Limit(limit).
-		Find(&events).Error
+	txCtx := contextutil.WithTx(ctx, tx)
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch pending webhook events: %w", err)
-	}
-	return events, nil
-}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			logger.Log.Errorf("panic recovered in transaction: %v", r)
+			panic(r)
+		}
+	}()
 
-// -------------------------
-// 🚀 Update Webhook Status
-// -------------------------
-func (r *rtdnRepository) UpdateWebhookStatus(ctx context.Context, tx *gorm.DB, eventID string, status string) error {
-	if tx == nil {
-		tx = r.db.WithContext(ctx)
-	} else {
-		tx = tx.WithContext(ctx)
+	if err := fn(txCtx); err != nil {
+		if rollbackErr := tx.Rollback().Error; rollbackErr != nil {
+			logger.Log.Errorf("rollback failed: %v", rollbackErr)
+		}
+		return fmt.Errorf("transaction failed: %w", err)
 	}
 
-	logger.Log.WithFields(logrus.Fields{
-		"event_id": eventID,
-		"status":   status,
-	}).Info("✅ Updating webhook status")
-
-	result := tx.Model(&models.GooglePlayWebhookEvent{}).
-		Where("id = ?", eventID).
-		Update("status", status)
-
-	if result.Error != nil {
-		return fmt.Errorf("failed to update webhook status: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("event not found: %s", eventID)
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("commit failed: %w", err)
 	}
 
 	return nil
 }
 
-// -------------------------
-// 🚀 Increment Retry Count
-// -------------------------
-func (r *rtdnRepository) IncrementRetryCount(ctx context.Context, tx *gorm.DB, eventID string) error {
-	if tx == nil {
+func (r *rtdnRepository) Create(ctx context.Context, event *models.GooglePlayWebhookEvent) error {
+	start := time.Now()
+
+	tx, ok := contextutil.TxFromContext(ctx)
+	if !ok {
 		tx = r.db.WithContext(ctx)
-	} else {
-		tx = tx.WithContext(ctx)
+	}
+
+	if err := tx.Create(event).Error; err != nil {
+		logger.Log.Errorf("failed to create event: %v", err)
+		return fmt.Errorf("repository create failed: %w", err)
+	}
+
+	logger.Log.Infof("event created in %v", time.Since(start))
+	return nil
+}
+
+func (r *rtdnRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status models.WebhookEventStatus, errorMsg string) error {
+	start := time.Now()
+
+	tx, ok := contextutil.TxFromContext(ctx)
+	if !ok {
+		tx = r.db.WithContext(ctx)
+	}
+
+	result := tx.Model(&models.GooglePlayWebhookEvent{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"status": status,
+			"error":  errorMsg,
+		})
+
+	if result.Error != nil {
+		logger.Log.Errorf("failed to update status: %v", result.Error)
+		return fmt.Errorf("repository update status failed: %w", result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		logger.Log.Warnf("no rows affected when updating status for event %s", id)
+		return fmt.Errorf("event not found")
+	}
+
+	logger.Log.Infof("status updated in %v", time.Since(start))
+	return nil
+}
+
+func (r *rtdnRepository) IncrementRetryCount(ctx context.Context, eventID uuid.UUID) error {
+	tx, ok := contextutil.TxFromContext(ctx)
+	if !ok {
+		tx = r.db.WithContext(ctx)
 	}
 
 	result := tx.Model(&models.GooglePlayWebhookEvent{}).
@@ -123,26 +125,21 @@ func (r *rtdnRepository) IncrementRetryCount(ctx context.Context, tx *gorm.DB, e
 	return nil
 }
 
-// -------------------------
-// 🚀 Move to Dead Letter Queue (DLQ)
-// -------------------------
-
-func (r *rtdnRepository) MoveToDeadLetterQueue(ctx context.Context, tx *gorm.DB, eventID string) error {
-	if tx == nil {
+// internal/playstore/rtdn/repository/repository.go
+func (r *rtdnRepository) Exists(ctx context.Context, id uuid.UUID) (bool, error) {
+	tx, ok := contextutil.TxFromContext(ctx)
+	if !ok {
 		tx = r.db.WithContext(ctx)
-	} else {
-		tx = tx.WithContext(ctx)
 	}
 
+	var count int64
 	result := tx.Model(&models.GooglePlayWebhookEvent{}).
-		Where("id = ?", eventID).
-		Update("status", "dead_letter")
+		Where("id = ?", id).
+		Count(&count)
 
 	if result.Error != nil {
-		return fmt.Errorf("failed to move event to DLQ: %w", result.Error)
+		return false, fmt.Errorf("failed to check event existence: %w", result.Error)
 	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("event not found: %s", eventID)
-	}
-	return nil
+
+	return count > 0, nil
 }

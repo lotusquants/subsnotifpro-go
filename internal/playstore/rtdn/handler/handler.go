@@ -9,8 +9,7 @@ import (
 	"time"
 
 	"subsnotifpro-go/internal/constants"
-	"subsnotifpro-go/internal/playstore/rtdn/dispatch"
-	"subsnotifpro-go/internal/playstore/rtdn/models"
+	"subsnotifpro-go/internal/playstore/rtdn/dto"
 	"subsnotifpro-go/internal/playstore/rtdn/parser"
 	"subsnotifpro-go/internal/playstore/rtdn/service"
 	"subsnotifpro-go/internal/playstore/rtdn/validator"
@@ -24,9 +23,9 @@ import (
 )
 
 // RegisterRTDNRoutes registers all RTDN webhook and DLQ management routes.
-func RegisterRTDNRoutes(r *gin.RouterGroup, ch *amqp.Channel, handler *RTDNHandler) {
+func RegisterRTDNRoutes(r *gin.RouterGroup, handler *RTDNHandler) {
 	r.POST("/rtdn/webhooks", func(c *gin.Context) {
-		handler.WebhookHandler(c, ch)
+		handler.WebhookHandler(c)
 	})
 	r.GET("/rtdn/dlq/size", GetDLQSize)
 	r.POST("/rtdn/dlq/retry", RetryDLQHandler)
@@ -43,67 +42,91 @@ func NewRTDNHandler(service service.RTDNService) *RTDNHandler {
 }
 
 // WebhookHandler handles incoming RTDN requests (both wrapped and unwrapped).
-func (h *RTDNHandler) WebhookHandler(c *gin.Context, ch *amqp.Channel) {
+func (h *RTDNHandler) WebhookHandler(c *gin.Context) {
+
 	logger.Log.Info("📩 Received RTDN webhook request")
 	defer c.Request.Body.Close()
 
+	// 1. JWT Validation
+
+	// 2. Read and parse request
 	rawBody, err := io.ReadAll(c.Request.Body)
 	if err != nil {
+		logger.Log.WithError(err).Error("Failed to read request body")
 		utils.WriteGinErrorResponse(c, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
-	var pubsubPayload struct {
+	// 3. Parse based on format (wrapped/unwrapped)
+	event, err := h.parseRTDN(rawBody)
+	if err != nil {
+		logger.Log.WithError(err).Error("Failed to parse RTDN")
+		utils.WriteGinErrorResponse(c, http.StatusBadRequest, "Invalid RTDN format")
+		return
+	}
+
+	// 4. Initialize system fields for the recived events (ID, recieved time, processing status, processed time)
+	event.Init()
+
+	// 5. Validate payload
+	if err := validator.ValidateWebhookPayload(event); err != nil {
+		logger.Log.WithError(err).Warn("Validation failed")
+		utils.WriteGinErrorResponse(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// 6. Process event
+	if err := h.service.ProcessWebhookEventForPublish(c.Request.Context(), event); err != nil {
+		logger.Log.WithError(err).Error("Processing failed")
+		utils.WriteGinErrorResponse(c, http.StatusInternalServerError, "Event processing failed")
+		return
+	}
+
+	// 7. Return success response
+	utils.WriteGinJSONResponse(c, http.StatusAccepted, gin.H{
+		"message": "Webhook processed successfully",
+		"Id":      event.ID.String(),
+		"type":    event.GetNotificationType(),
+	})
+}
+
+func (h *RTDNHandler) parseRTDN(rawBody []byte) (*dto.GooglePlayWebhookEvent, error) {
+	// Try Pub/Sub format first
+	var pubsub struct {
 		Message struct {
 			Data string `json:"data"`
 		} `json:"message"`
 	}
 
-	if json.Unmarshal(rawBody, &pubsubPayload) == nil && pubsubPayload.Message.Data != "" {
-		event, err := validator.DecodeRTDNMessage(pubsubPayload.Message.Data)
-		if err != nil {
-			utils.WriteGinErrorResponse(c, http.StatusBadRequest, "Invalid RTDN message")
-			return
-		}
-		h.processEvent(c, event, ch)
-		return
+	if json.Unmarshal(rawBody, &pubsub) == nil && pubsub.Message.Data != "" {
+		return parser.ParseWrappedRTDN(pubsub.Message.Data)
 	}
 
-	event, err := parser.ParseUnwrappedRTDN(rawBody)
-	if err != nil {
-		utils.WriteGinErrorResponse(c, http.StatusBadRequest, "Invalid RTDN format")
-		return
-	}
-
-	h.processEvent(c, event, ch)
+	// Fallback to direct format
+	return parser.ParseUnwrappedRTDN(rawBody)
 }
 
-// processEvent validates, stores, and enqueues RTDN messages.
-func (h *RTDNHandler) processEvent(c *gin.Context, event models.GooglePlayWebhookEvent, ch *amqp.Channel) {
-	defer func() {
-		if r := recover(); r != nil {
-			logger.Log.Errorf("🚨 Panic recovered in processEvent: %v", r)
-		}
-	}()
+// // processEvent validates, stores, and enqueues RTDN messages.
+// func (h *RTDNHandler) processEvent(c *gin.Context, event *dto.GooglePlayWebhookEvent, ch *amqp.Channel) {
+// 	defer func() {
+// 		if r := recover(); r != nil {
+// 			logger.Log.Errorf("🚨 Panic recovered in processEvent: %v", r)
+// 		}
+// 	}()
 
-	if err := validator.ValidateWebhookPayload(&event); err != nil {
-		utils.WriteGinErrorResponse(c, http.StatusBadRequest, err.Error())
-		return
-	}
+// 	if err := h.service.SaveWebhookEvent(&event); err != nil {
+// 		utils.WriteGinErrorResponse(c, http.StatusInternalServerError, "Failed to store event")
+// 		return
+// 	}
 
-	if err := h.service.SaveWebhookEvent(&event); err != nil {
-		utils.WriteGinErrorResponse(c, http.StatusInternalServerError, "Failed to store event")
-		return
-	}
+// 	if err := dispatch.PublishToQueue(event, ch); err != nil {
+// 		utils.WriteGinErrorResponse(c, http.StatusInternalServerError, "Failed to queue event")
+// 		return
+// 	}
 
-	if err := dispatch.PublishToQueue(event, ch); err != nil {
-		utils.WriteGinErrorResponse(c, http.StatusInternalServerError, "Failed to queue event")
-		return
-	}
-
-	logger.Log.Infof("✅ RTDN webhook received and queued successfully for product: %s", event.PackageName)
-	utils.WriteGinJSONResponse(c, http.StatusOK, gin.H{"message": "Webhook received successfully"})
-}
+// 	logger.Log.Infof("✅ RTDN webhook received and queued successfully for product: %s", event.PackageName)
+// 	utils.WriteGinJSONResponse(c, http.StatusOK, gin.H{"message": "Webhook received successfully"})
+// }
 
 // GetDLQSize fetches the size of the RTDN Dead Letter Queue.
 func GetDLQSize(c *gin.Context) {

@@ -46,6 +46,7 @@ const (
 	RTDNDLQ              = "rtdn_dlq"
 	RTDNDLQThreshold     = 10 // DLQThreshold defines the warning threshold for the dead-letter queue
 	DLQSizeCheckInterval = 300
+	WorkerCount          = 3
 )
 
 // **Adaptive DLQ Monitoring Thresholds**

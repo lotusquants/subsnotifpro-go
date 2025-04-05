@@ -19,7 +19,6 @@ type PlaystoreSubscriptionRepository interface {
 	InsertSubscription(ctx context.Context, tx *gorm.DB, sub *models.SubscriptionPurchaseV2) error
 	UpdateSubscriptionFields(ctx context.Context, tx *gorm.DB, subscriptionID uuid.UUID, updateFields map[string]interface{}) error
 
-	CreateSubscriptionChangeEvent(ctx context.Context, tx *gorm.DB, event *models.SubscriptionChangeEvent) (uuid.UUID, error)
 	InsertSubscriptionStateTransition(ctx context.Context, tx *gorm.DB, history *models.SubscriptionStateTransitionHistory) error
 	InsertOrderIDTransition(ctx context.Context, tx *gorm.DB, history *models.SubscriptionOrderIdTransitionHistory) error
 
@@ -72,24 +71,10 @@ func (r *playstoreSubscriptionRepository) GetSubscriptionByPurchaseToken(
 
 	var sub models.SubscriptionPurchaseV2
 	err := tx.WithContext(ctx).
-		// Base subscription fields
-		Preload("SubscriptionStateModel").
-		Preload("AcknowledgementStateModel").
-		Preload("RegionCode").
-		Preload("SubscriptionPausedContext").
 		Preload("SubscriptionCancellationContext").
-
-		// Line items with all nested relationships
-		Preload("LineItems", func(db *gorm.DB) *gorm.DB {
-			return db.
-				Preload("AutoRenewingPlan").
-				Preload("AutoRenewingPlan.PriceChangeDetails").
-				Preload("AutoRenewingPlan.InstallmentPlan").
-				Preload("PrepaidPlan").
-				Preload("OfferDetails").
-				Preload("SignupPromotion").
-				Preload("DeferredItemReplacement")
-		}).
+		Preload("LineItems").
+		Preload("LineItems.AutoRenewingPlan").
+		Preload("LineItems.OfferDetails").
 		Where("purchase_token = ?", token).
 		First(&sub).Error
 
@@ -144,18 +129,6 @@ func (r *playstoreSubscriptionRepository) InsertSubscriptionStateTransition(
 	history *models.SubscriptionStateTransitionHistory,
 ) error {
 	return tx.WithContext(ctx).Create(history).Error
-}
-
-func (r *playstoreSubscriptionRepository) CreateSubscriptionChangeEvent(
-	ctx context.Context,
-	tx *gorm.DB,
-	event *models.SubscriptionChangeEvent,
-) (uuid.UUID, error) {
-	// Ensure the context is carried
-	if err := tx.WithContext(ctx).Create(event).Error; err != nil {
-		return uuid.Nil, fmt.Errorf("failed to create SubscriptionChangeEvent: %w", err)
-	}
-	return event.ID, nil
 }
 
 func (r *playstoreSubscriptionRepository) InsertOrderIDTransition(

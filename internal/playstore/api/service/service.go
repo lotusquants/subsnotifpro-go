@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 
+	"subsnotifpro-go/internal/playstore/api/dto"
+	"subsnotifpro-go/internal/playstore/api/mapper"
 	clientService "subsnotifpro-go/internal/playstore/client/service"
 
 	"google.golang.org/api/androidpublisher/v3"
@@ -18,7 +20,7 @@ type PlaystoreApiService interface {
 	VerifyServiceAccountAccess(ctx context.Context, serviceAccountPath, packageName string) (bool, error)
 
 	// GetUserSubscriptionPurchase fetches subscription purchase details using a purchase token.
-	GetUserSubscriptionPurchase(ctx context.Context, purchaseToken, packageName string) (*androidpublisher.SubscriptionPurchaseV2, error)
+	GetUserSubscriptionPurchase(ctx context.Context, purchaseToken, packageName string) (*dto.SubscriptionPurchaseV2, error)
 
 	// ListSubscriptionProducts lists all available subscription products for a package.
 	ListSubscriptionProducts(ctx context.Context, packageName string) (*androidpublisher.ListSubscriptionsResponse, error)
@@ -66,7 +68,7 @@ func (s *playstoreApiService) VerifyServiceAccountAccess(ctx context.Context, se
 // -------------------------
 // 🚀 GetUserSubscriptionPurchase
 // -------------------------
-func (s *playstoreApiService) GetUserSubscriptionPurchase(ctx context.Context, purchaseToken, packageName string) (*androidpublisher.SubscriptionPurchaseV2, error) {
+func (s *playstoreApiService) GetUserSubscriptionPurchase(ctx context.Context, purchaseToken, packageName string) (*dto.SubscriptionPurchaseV2, error) {
 	// Get the singleton API client
 	service, err := s.clientService.GetPublisherService(ctx, packageName)
 	if err != nil {
@@ -79,8 +81,16 @@ func (s *playstoreApiService) GetUserSubscriptionPurchase(ctx context.Context, p
 		return nil, fmt.Errorf("failed to fetch subscription purchase details: %w", err)
 	}
 
-	log.Printf("✅ Subscription details fetched successfully for token: %s\n", purchaseToken)
-	return resp, nil
+	// 2. Convert to our domain model
+	subscription, err := mapper.ToSubscriptionPurchaseV2(resp)
+	if err != nil {
+		log.Printf("❌ Failed to convert subscription data: %v", err)
+		return nil, fmt.Errorf("conversion error: %w", err)
+	}
+
+	log.Printf("✅ Fetched subscription for token: %s (status: %s)",
+		purchaseToken, subscription.SubscriptionState)
+	return subscription, nil
 }
 
 // -------------------------

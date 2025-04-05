@@ -3,45 +3,47 @@ package service
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
+	"subsnotifpro-go/internal/playstore/api/dto"
 	rtdnModels "subsnotifpro-go/internal/playstore/rtdn/models"
 	"subsnotifpro-go/internal/playstore/subscription/models"
 
 	"github.com/google/uuid"
-	"google.golang.org/api/androidpublisher/v3"
 	"gorm.io/gorm"
 )
 
 func (s *playstoreSubscriptionService) ResolveLineItems(
 	ctx context.Context,
 	tx *gorm.DB,
-	subscriptionID uuid.UUID,
-	existing *models.SubscriptionPurchaseV2,
-	subData *androidpublisher.SubscriptionPurchaseV2,
+	subscription *models.SubscriptionPurchaseV2,
+	subData *dto.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
 	notificationType rtdnModels.SubscriptionNotificationType,
 ) ([]models.SubscriptionLineItem, error) {
 	var resolvedItems []models.SubscriptionLineItem
 	var lineItemHistories []models.SubscriptionLineItemHistory
 
-	// Create maps for efficient lookup
+	// Create lookup map for existing items (empty for new subscriptions)
 	existingItemsByProduct := make(map[string]*models.SubscriptionLineItem)
-	for i := range existing.LineItems {
-		item := existing.LineItems[i]
+	for i := range subscription.LineItems {
+		item := subscription.LineItems[i]
 		existingItemsByProduct[item.ProductID] = &item
 	}
 
-	// Process each line item from Play Store data
+	// Process all line items from Play Store data
 	for _, newItem := range subData.LineItems {
-		productID := newItem.ProductId
+		productID := newItem.ProductID
+		// log.Println("notification recieved is", notificationType.String())
+		// log.Println("product id recieved in line items", productID)
 		existingItem, exists := existingItemsByProduct[productID]
-
+		// log.Println("Existing subscription is:", subscription)
+		// log.Println("existing  line items", existingItemsByProduct)
 		if exists {
-			// Update existing line item and its nested models
+			// Update existing line item
 			updatedItem, itemHistory, err := s.updateLineItemAndNestedModels(
-				ctx, tx, subscriptionID, *existing, existingItem, newItem, changeEventID, notificationType,
+				ctx, tx, subscription.ID, subscription, existingItem, &newItem,
+				changeEventID, notificationType,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("failed to update line item %s: %w", productID, err)
@@ -52,9 +54,9 @@ func (s *playstoreSubscriptionService) ResolveLineItems(
 			}
 			delete(existingItemsByProduct, productID)
 		} else {
-			// Create new line item with nested models
+			// Create new line item (works for both new and existing subscriptions)
 			newLineItem, itemHistory, err := s.createLineItemWithNestedModels(
-				ctx, tx, subscriptionID, *existing, newItem, changeEventID,
+				ctx, tx, subscription.ID, subscription, &newItem, changeEventID,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create line item %s: %w", productID, err)
@@ -64,16 +66,14 @@ func (s *playstoreSubscriptionService) ResolveLineItems(
 		}
 	}
 
-	// Handle expired line items and their nested models
+	// Handle expired items (only relevant for existing subscriptions with removed items)
 	for _, expiredItem := range existingItemsByProduct {
-		if err := s.handleExpiredLineItem(
-			ctx, tx, expiredItem, changeEventID,
-		); err != nil {
-			return nil, fmt.Errorf("failed to handle expired line item %s: %w", expiredItem.ProductID, err)
+		if err := s.handleExpiredLineItem(ctx, tx, expiredItem, changeEventID); err != nil {
+			return nil, fmt.Errorf("failed to expire line item %s: %w", expiredItem.ProductID, err)
 		}
 	}
-
-	// Save all history entries
+	// log.Println("Length of line item histories : ", len(lineItemHistories))
+	// Save history entries if any
 	if len(lineItemHistories) > 0 {
 		if err := s.repo.CreateBulkSubscriptionLineItemHistory(ctx, tx, lineItemHistories); err != nil {
 			return nil, fmt.Errorf("failed to save history entries: %w", err)
@@ -87,78 +87,77 @@ func (s *playstoreSubscriptionService) updateLineItemAndNestedModels(
 	ctx context.Context,
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
-	subscriptionData models.SubscriptionPurchaseV2,
-	existingItem *models.SubscriptionLineItem,
-	newItem *androidpublisher.SubscriptionPurchaseLineItem,
+	existingSubscription *models.SubscriptionPurchaseV2,
+
+	existingLineItem *models.SubscriptionLineItem,
+	newItem *dto.LineItem,
 	changeEventID uuid.UUID,
 	notificationType rtdnModels.SubscriptionNotificationType,
 ) (*models.SubscriptionLineItem, *models.SubscriptionLineItemHistory, error) {
-	var history *models.SubscriptionLineItemHistory
-	previousExpiry := existingItem.ExpiryTime
-	previousStatus := existingItem.Status
 
-	newExpiryTime, err := time.Parse(time.RFC3339Nano, newItem.ExpiryTime)
-	if err != nil {
-		return nil, nil, fmt.Errorf("invalid expiry time format: %w", err)
-	}
+	previousExpiry := existingLineItem.ExpiryTime
+	previousStatus := existingLineItem.Status
+	previousPlanType := existingLineItem.PlanType
 
-	// Check for changes that require history entry
-	if !existingItem.ExpiryTime.Equal(newExpiryTime) || existingItem.Status != models.LineItemStatusActive {
-		history = &models.SubscriptionLineItemHistory{
-			LineItemID:         existingItem.ID,
-			PlanType:           existingItem.PlanType,
-			PreviousExpiryTime: &previousExpiry,
-			CurrentExpiryTime:  newExpiryTime,
-			PreviousStatus:     &previousStatus,
-			CurrentStatus:      models.LineItemStatusActive,
-			ChangedAt:          time.Now(),
-			ChangeEventID:      changeEventID,
-			Reason:             "Updated from Play Store",
-		}
-	}
+	newExpiryTime := newItem.ExpiryTime
 
 	// Update line item fields
-	existingItem.ExpiryTime = newExpiryTime
-	existingItem.Status = models.LineItemStatusActive
+	existingLineItem.ExpiryTime = newExpiryTime
+	existingLineItem.Status = models.LineItemStatusActive
 
 	// Handle nested models
 	if err := s.resolveNestedModelsForUpdate(
-		ctx, tx, subscriptionID, subscriptionData, existingItem, newItem, changeEventID,
+		ctx, tx, subscriptionID, existingSubscription, existingLineItem, newItem, changeEventID,
 	); err != nil {
 		return nil, nil, fmt.Errorf("failed to resolve nested models: %w", err)
 	}
 
-	if err := tx.Save(existingItem).Error; err != nil {
+	// modify the existing line item
+	if err := tx.Save(existingLineItem).Error; err != nil {
 		return nil, nil, fmt.Errorf("failed to save updated line item: %w", err)
 	}
 
-	return existingItem, history, nil
+	// Now create history object to be collected
+	history := &models.SubscriptionLineItemHistory{
+		LineItemID:         existingLineItem.ID,
+		PlanType:           previousPlanType,
+		SubscriptionID:     subscriptionID,
+		PreviousExpiryTime: &previousExpiry,
+		CurrentExpiryTime:  newExpiryTime,
+		PreviousStatus:     &previousStatus,
+		CurrentStatus:      models.LineItemStatusActive,
+		ChangedAt:          time.Now(),
+		ChangeEventID:      changeEventID,
+		Reason:             notificationType.String() + " rtdn",
+	}
+
+	return existingLineItem, history, nil
 }
 
 func (s *playstoreSubscriptionService) createLineItemWithNestedModels(
 	ctx context.Context,
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
-	subscriptionData models.SubscriptionPurchaseV2,
-	newLineItemData *androidpublisher.SubscriptionPurchaseLineItem,
+	existingSubscription *models.SubscriptionPurchaseV2,
+	newLineItemData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) (*models.SubscriptionLineItem, *models.SubscriptionLineItemHistory, error) {
-	newExpiryTime, err := time.Parse(time.RFC3339Nano, newLineItemData.ExpiryTime)
-	if err != nil {
-		return nil, nil, fmt.Errorf("invalid expiry time format: %w", err)
-	}
+	newExpiryTime := newLineItemData.ExpiryTime
+
+	// Generate UUID upfront
+	lineItemID := uuid.New()
 
 	newLineItemModel := &models.SubscriptionLineItem{
+		ID:             lineItemID,
 		SubscriptionID: subscriptionID,
-		ProductID:      newLineItemData.ProductId,
+		ProductID:      newLineItemData.ProductID,
 		ExpiryTime:     newExpiryTime,
 		Status:         models.LineItemStatusActive,
-		ItemType:       determineLineItemType(newLineItemData),
 	}
 
 	// Handle nested models
 	if err := s.resolveNestedModelsForCreate(
-		ctx, tx, subscriptionID, subscriptionData, newLineItemModel, newLineItemData, changeEventID,
+		ctx, tx, subscriptionID, existingSubscription, newLineItemModel, newLineItemData, changeEventID,
 	); err != nil {
 		return nil, nil, fmt.Errorf("failed to resolve nested models: %w", err)
 	}
@@ -171,12 +170,13 @@ func (s *playstoreSubscriptionService) createLineItemWithNestedModels(
 	// Create history entry
 	history := &models.SubscriptionLineItemHistory{
 		LineItemID:        newLineItemModel.ID,
+		SubscriptionID:    subscriptionID,
 		PlanType:          newLineItemModel.PlanType,
 		CurrentExpiryTime: newLineItemModel.ExpiryTime,
 		CurrentStatus:     newLineItemModel.Status,
 		ChangedAt:         time.Now(),
 		ChangeEventID:     changeEventID,
-		Reason:            "New line item from Play Store",
+		Reason:            "New line item created",
 	}
 
 	return newLineItemModel, history, nil
@@ -226,24 +226,19 @@ func (s *playstoreSubscriptionService) resolveNestedModelsForUpdate(
 	ctx context.Context,
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
-	subscriptionData models.SubscriptionPurchaseV2,
+	existingSubscription *models.SubscriptionPurchaseV2,
 	existingLineItemModel *models.SubscriptionLineItem,
-	newLineItemData *androidpublisher.SubscriptionPurchaseLineItem,
+	newLineItemData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) error {
 	// Handle AutoRenewingPlan
 	if newLineItemData.AutoRenewingPlan != nil {
-		recurringPrice := models.Money{
-			CurrencyCode: newLineItemData.AutoRenewingPlan.RecurringPrice.CurrencyCode,
-			Units:        newLineItemData.AutoRenewingPlan.RecurringPrice.Units,
-			Nanos:        newLineItemData.AutoRenewingPlan.RecurringPrice.Nanos,
-		}
 
 		if existingLineItemModel.AutoRenewingPlanID != nil {
 			// Update existing auto renewing plan
 			if _, err := s.updateAutoRenewingPlan(
 				ctx, tx, subscriptionID, existingLineItemModel,
-				newLineItemData, recurringPrice, changeEventID,
+				newLineItemData, changeEventID,
 			); err != nil {
 				return fmt.Errorf("failed to update auto renewing plan: %w", err)
 			}
@@ -252,7 +247,7 @@ func (s *playstoreSubscriptionService) resolveNestedModelsForUpdate(
 			// Create new auto renewing plan
 			autoPlanID, err := s.createAutoRenewingPlan(
 				ctx, tx, subscriptionID, existingLineItemModel,
-				newLineItemData, recurringPrice, changeEventID,
+				newLineItemData, changeEventID,
 			)
 			if err != nil {
 				return fmt.Errorf("failed to create auto renewing plan: %w", err)
@@ -290,18 +285,18 @@ func (s *playstoreSubscriptionService) resolveNestedModelsForUpdate(
 	if newLineItemData.OfferDetails != nil {
 		if existingLineItemModel.OfferDetailsID != nil {
 			if _, err := s.updateOfferDetails(
-				ctx, tx, subscriptionID, subscriptionData, existingLineItemModel,
+				ctx, tx, subscriptionID, existingSubscription, existingLineItemModel,
 				newLineItemData, changeEventID,
 			); err != nil {
-				return fmt.Errorf("failed to update offer details: %w", err)
+				return fmt.Errorf("failed to resolve offer details: %w", err)
 			}
 		} else {
 			offerDetailsID, err := s.createOfferDetails(
-				ctx, tx, subscriptionID, subscriptionData, existingLineItemModel,
+				ctx, tx, subscriptionID, existingSubscription, existingLineItemModel,
 				newLineItemData, changeEventID,
 			)
 			if err != nil {
-				return fmt.Errorf("failed to create offer details: %w", err)
+				return fmt.Errorf("failed to resolve offer details: %w", err)
 			}
 			existingLineItemModel.OfferDetailsID = offerDetailsID
 		}
@@ -355,22 +350,17 @@ func (s *playstoreSubscriptionService) resolveNestedModelsForCreate(
 	ctx context.Context,
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
-	subscriptionData models.SubscriptionPurchaseV2,
+	existingSubscription *models.SubscriptionPurchaseV2,
 	newLineItemModel *models.SubscriptionLineItem,
-	newLineItemData *androidpublisher.SubscriptionPurchaseLineItem,
+	newLineItemData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) error {
 	// Handle AutoRenewingPlan
 	if newLineItemData.AutoRenewingPlan != nil {
-		recurringPrice := models.Money{
-			CurrencyCode: newLineItemData.AutoRenewingPlan.RecurringPrice.CurrencyCode,
-			Units:        newLineItemData.AutoRenewingPlan.RecurringPrice.Units,
-			Nanos:        newLineItemData.AutoRenewingPlan.RecurringPrice.Nanos,
-		}
 
 		autoPlanID, err := s.createAutoRenewingPlan(
 			ctx, tx, subscriptionID, newLineItemModel,
-			newLineItemData, recurringPrice, changeEventID,
+			newLineItemData, changeEventID,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create auto renewing plan: %w", err)
@@ -395,11 +385,11 @@ func (s *playstoreSubscriptionService) resolveNestedModelsForCreate(
 	// Handle OfferDetails
 	if newLineItemData.OfferDetails != nil {
 		offerDetailsID, err := s.createOfferDetails(
-			ctx, tx, subscriptionID, subscriptionData, newLineItemModel,
+			ctx, tx, subscriptionID, existingSubscription, newLineItemModel,
 			newLineItemData, changeEventID,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to create offer details: %w", err)
+			return fmt.Errorf("failed to resolve offer details: %w", err)
 		}
 		newLineItemModel.OfferDetailsID = offerDetailsID
 	}
@@ -483,11 +473,4 @@ func (s *playstoreSubscriptionService) expireNestedModels(
 	}
 
 	return nil
-}
-
-func determineLineItemType(item *androidpublisher.SubscriptionPurchaseLineItem) models.LineItemType {
-	if strings.HasSuffix(item.ProductId, ".base") {
-		return models.LineItemTypeBase
-	}
-	return models.LineItemTypeAddOn
 }

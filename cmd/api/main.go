@@ -9,10 +9,13 @@ import (
 	"os/signal"
 	"strconv"
 	"subsnotifpro-go/internal/constants"
+	messaging "subsnotifpro-go/internal/pkg/messaging"
+	dispatch "subsnotifpro-go/internal/playstore/dispatch"
 
 	playstoreApiHandler "subsnotifpro-go/internal/playstore/api/handler"
 	playstoreApiService "subsnotifpro-go/internal/playstore/api/service"
 	playstoreClientService "subsnotifpro-go/internal/playstore/client/service"
+
 	playstoreCatalogHandler "subsnotifpro-go/internal/playstore/products/handler"
 	playstoreCatalogRepo "subsnotifpro-go/internal/playstore/products/repository"
 	playstoreCatalogService "subsnotifpro-go/internal/playstore/products/service"
@@ -28,7 +31,6 @@ import (
 	playstoreUserService "subsnotifpro-go/internal/playstore/user/service"
 	userRepo "subsnotifpro-go/internal/users/repository"
 	userService "subsnotifpro-go/internal/users/service"
-
 	"sync"
 	"syscall"
 	"time"
@@ -83,6 +85,15 @@ func main() {
 
 	// 🟢 Services
 
+	// Create generic publisher
+	msgPublisher := messaging.NewRabbitMQPublisher(messaging.PublisherOptions{
+		Channel: ch,
+		// Metrics: metrics.NewPublisherMetrics(),
+	})
+
+	// Create domain-specific publishers
+	googlePlayPublisher := dispatch.NewGooglePlayPublisher(msgPublisher)
+
 	// ✅ Create a temporary placeholder for settingsService (declare first)
 	// ✅ Step 1: Declare placeholder
 	psClientService := playstoreClientService.NewPlaystoreClientService()
@@ -103,7 +114,7 @@ func main() {
 
 	subscriptionService := playstoreSubscriptionService.NewPlaystoreSubscriptionService(db, subscriptionRepo, psUserService, psApiService, psCatalogService)
 
-	psRtdnService := playstoreRTDNService.NewRTDNService(ctx, psRtdnRepo, psApiService, subscriptionService, db)
+	psRtdnService := playstoreRTDNService.NewRTDNService(ctx, psRtdnRepo, psApiService, subscriptionService, db, googlePlayPublisher)
 	psSettingsService := playstoreSettingServicePkg.NewPlaystoreSettingsService(psSettingsRepo, psApiService, db)
 	psClientService.SetAccountProvider(psSettingsService) // this works via interface
 
@@ -115,8 +126,6 @@ func main() {
 	psSubscriptionCatalogHandler := playstoreCatalogHandler.NewSubscriptionCatalogHandler(psSubscriptionCatalogService)
 
 	deps := &routes.RouteDependencies{
-		RabbitMQChannel: ch,
-
 		PlaystoreRTDNHandler:                psRtdnHandler,
 		PlaystoreSettingsHandler:            psSettingsHandler,
 		PlaystoreApiHandler:                 psApiHandler,

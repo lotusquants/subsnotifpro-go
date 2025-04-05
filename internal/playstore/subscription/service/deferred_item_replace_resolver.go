@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"subsnotifpro-go/internal/playstore/api/dto"
 	"subsnotifpro-go/internal/playstore/subscription/models"
 
 	"github.com/google/uuid"
-	"google.golang.org/api/androidpublisher/v3"
 	"gorm.io/gorm"
 )
 
@@ -17,7 +17,7 @@ func (s *playstoreSubscriptionService) createDeferredItemReplacement(
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
 	newlineItemID uuid.UUID,
-	newLineItemData *androidpublisher.SubscriptionPurchaseLineItem,
+	newLineItemData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) (*uuid.UUID, error) {
 	if newLineItemData.DeferredItemReplacement == nil {
@@ -27,8 +27,8 @@ func (s *playstoreSubscriptionService) createDeferredItemReplacement(
 	deferredItem := &models.DeferredItemReplacement{
 		SubscriptionID:    subscriptionID,
 		LineItemID:        newlineItemID,
-		PreviousProductID: newLineItemData.ProductId,
-		NewProductID:      newLineItemData.DeferredItemReplacement.ProductId,
+		PreviousProductID: newLineItemData.ProductID,
+		NewProductID:      newLineItemData.DeferredItemReplacement.ProductID,
 	}
 
 	if err := tx.Create(deferredItem).Error; err != nil {
@@ -40,7 +40,7 @@ func (s *playstoreSubscriptionService) createDeferredItemReplacement(
 		LineItemID:        newlineItemID,
 		ChangeType:        "CREATED",
 		PreviousProductID: &deferredItem.PreviousProductID,
-		NewProductID:      newLineItemData.DeferredItemReplacement.ProductId,
+		NewProductID:      newLineItemData.DeferredItemReplacement.ProductID,
 		ChangeEventID:     changeEventID,
 	}
 
@@ -56,7 +56,7 @@ func (s *playstoreSubscriptionService) updateDeferredItemReplacement(
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
 	existingLineItemID uuid.UUID,
-	newLineItemData *androidpublisher.SubscriptionPurchaseLineItem,
+	newLineItemData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) (*uuid.UUID, error) {
 	if newLineItemData.DeferredItemReplacement == nil {
@@ -76,16 +76,16 @@ func (s *playstoreSubscriptionService) updateDeferredItemReplacement(
 	}
 
 	// Check if replacement actually changed
-	if existing.NewProductID == newLineItemData.DeferredItemReplacement.ProductId &&
-		existing.PreviousProductID == newLineItemData.ProductId {
+	if existing.NewProductID == newLineItemData.DeferredItemReplacement.ProductID &&
+		existing.PreviousProductID == newLineItemData.ProductID {
 		// No changes needed
 		return &existing.ID, nil
 	}
 
 	// Prepare updates
 	updates := map[string]interface{}{
-		"previous_product_id": newLineItemData.ProductId,
-		"new_product_id":      newLineItemData.DeferredItemReplacement.ProductId,
+		"previous_product_id": newLineItemData.ProductID,
+		"new_product_id":      newLineItemData.DeferredItemReplacement.ProductID,
 	}
 
 	// Create history before updating
@@ -93,7 +93,7 @@ func (s *playstoreSubscriptionService) updateDeferredItemReplacement(
 		SubscriptionID:    subscriptionID,
 		LineItemID:        existingLineItemID,
 		PreviousProductID: &existing.NewProductID,
-		NewProductID:      newLineItemData.DeferredItemReplacement.ProductId,
+		NewProductID:      newLineItemData.DeferredItemReplacement.ProductID,
 		ChangeType:        "UPDATED",
 		ChangeEventID:     changeEventID,
 	}

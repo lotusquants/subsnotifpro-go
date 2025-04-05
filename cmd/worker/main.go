@@ -8,7 +8,10 @@ import (
 	"syscall"
 
 	"subsnotifpro-go/database"
+	messaging "subsnotifpro-go/internal/pkg/messaging"
 	playstoreApiService "subsnotifpro-go/internal/playstore/api/service"
+	playstoreSettingRepo "subsnotifpro-go/internal/playstore/settings/repository"
+	playstoreSettingServicePkg "subsnotifpro-go/internal/playstore/settings/service"
 	playstoreSubscriptionRepository "subsnotifpro-go/internal/playstore/subscription/repository"
 	playstoreSubscriptionService "subsnotifpro-go/internal/playstore/subscription/service"
 	playstoreUserRepo "subsnotifpro-go/internal/playstore/user/repository"
@@ -21,7 +24,8 @@ import (
 
 	clientService "subsnotifpro-go/internal/playstore/client/service"
 
-	"subsnotifpro-go/internal/playstore/rtdn/dispatch"
+	playstoreDispatchPkg "subsnotifpro-go/internal/playstore/dispatch"
+
 	rtdnRepo "subsnotifpro-go/internal/playstore/rtdn/repository"
 	rtdnService "subsnotifpro-go/internal/playstore/rtdn/service"
 	"subsnotifpro-go/queue"
@@ -47,36 +51,40 @@ func main() {
 	}
 	defer database.CloseDatabase(db)
 
-	// ✅ Pass only the interface (ServiceAccountProvider) to client
-	clientService := clientService.NewPlaystoreClientService() // no cycle now
+	// Create generic publisher
+	msgPublisher := messaging.NewRabbitMQPublisher(messaging.PublisherOptions{
+		Channel: ch,
+		// Metrics: metrics.NewPublisherMetrics(),
+	})
 
-	// ✅ Now pass the client to apiService
-	apiService := playstoreApiService.NewPlaystoreApiService(clientService)
-
-	userRepo := userRepo.NewUserRepository()
-	userService := userService.NewUserService(userRepo)
-
-	psUserRepo := playstoreUserRepo.NewPlaystoreUserRepository()
-
-	psUserService := playstoreUserService.NewPlaystoreUserService(userService, psUserRepo)
-
-	psCatalogRepo := playstoreCatalogRepo.NewSubscriptionCatalogRepository(db, 50)
-
-	psCatalogService := playstoreCatalogService.NewSubscriptionCatalogService(ctx, psCatalogRepo, apiService)
-
-	subscriptionRepo := playstoreSubscriptionRepository.NewPlaystoreSubscriptionRepository()
-
-	subscriptionService := playstoreSubscriptionService.NewPlaystoreSubscriptionService(db, subscriptionRepo, psUserService, apiService, psCatalogService)
+	// Create domain-specific publishers
+	googlePlayPublisher := playstoreDispatchPkg.NewGooglePlayPublisher(msgPublisher)
 
 	// ✅ Initialize the repositories and services
-	rtdnRepo := rtdnRepo.NewRTDNRepository(db)                                                    // Adjust according to your repo
-	rtdnService := rtdnService.NewRTDNService(ctx, rtdnRepo, apiService, subscriptionService, db) // Adjust according to your service
+	clientService := clientService.NewPlaystoreClientService()
+	apiService := playstoreApiService.NewPlaystoreApiService(clientService)
+	settingsRepo := playstoreSettingRepo.NewPlaystoreSettingsRepository(db)
+	settingsService := playstoreSettingServicePkg.NewPlaystoreSettingsService(settingsRepo, apiService, db)
+	clientService.SetAccountProvider(settingsService)
+	userRepo := userRepo.NewUserRepository()
+	userService := userService.NewUserService(userRepo)
+	psUserRepo := playstoreUserRepo.NewPlaystoreUserRepository()
+	psUserService := playstoreUserService.NewPlaystoreUserService(userService, psUserRepo)
+	psCatalogRepo := playstoreCatalogRepo.NewSubscriptionCatalogRepository(db, 50)
+	psCatalogService := playstoreCatalogService.NewSubscriptionCatalogService(ctx, psCatalogRepo, apiService)
+	subscriptionRepo := playstoreSubscriptionRepository.NewPlaystoreSubscriptionRepository()
+	subscriptionService := playstoreSubscriptionService.NewPlaystoreSubscriptionService(db, subscriptionRepo, psUserService, apiService, psCatalogService)
+	rtdnRepo := rtdnRepo.NewRTDNRepository(db)
+	rtdnService := rtdnService.NewRTDNService(ctx, rtdnRepo, apiService, subscriptionService, db, googlePlayPublisher)
 
 	// ✅ Create and start the consumer
-	consumer := dispatch.NewConsumer(ch, rtdnRepo, rtdnService)
-	go consumer.Start(ctx)
 
-	go dispatch.StartDLQConsumer(ctx, ch)
+	consumer := playstoreDispatchPkg.NewGooglePlayConsumer(ch, rtdnRepo, rtdnService, msgPublisher)
+	go consumer.Consumer.Start(ctx)
+
+	// consumer := dispatch.NewConsumer(ch, rtdnRepo, rtdnService)
+	// go consumer.Start(ctx)
+	// go dispatch.StartDLQConsumer(ctx, ch)
 
 	// ✅ Handle OS signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)

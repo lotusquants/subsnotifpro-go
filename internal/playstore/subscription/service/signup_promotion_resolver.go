@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"subsnotifpro-go/internal/playstore/api/dto"
 	"subsnotifpro-go/internal/playstore/subscription/models"
 
 	"github.com/google/uuid"
-	"google.golang.org/api/androidpublisher/v3"
 	"gorm.io/gorm"
 )
 
@@ -16,7 +16,7 @@ func (s *playstoreSubscriptionService) createSignupPromotion(
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
 	newLineItemID uuid.UUID,
-	newLineItemData *androidpublisher.SubscriptionPurchaseLineItem,
+	newLineItemData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) (*uuid.UUID, error) {
 	if newLineItemData.SignupPromotion == nil {
@@ -27,10 +27,10 @@ func (s *playstoreSubscriptionService) createSignupPromotion(
 	var promoType models.SignupPromotionType
 	var promoCode *string
 
-	if newLineItemData.SignupPromotion.VanityCode != nil {
+	if newLineItemData.SignupPromotion.Type == dto.PromoTypeVanityCode {
 		promoType = models.SignupPromotionTypeVanity
-		promoCode = &newLineItemData.SignupPromotion.VanityCode.PromotionCode
-	} else if newLineItemData.SignupPromotion.OneTimeCode != nil {
+		promoCode = newLineItemData.SignupPromotion.Code
+	} else if newLineItemData.SignupPromotion.Type == dto.PromoTypeOneTimeCode {
 		promoType = models.SignupPromotionTypeOneTime
 		promoCode = nil
 	} else {
@@ -71,7 +71,7 @@ func (s *playstoreSubscriptionService) updateSignupPromo(
 	tx *gorm.DB,
 	subscriptionID uuid.UUID,
 	existingLineItemID uuid.UUID,
-	newLineItemData *androidpublisher.SubscriptionPurchaseLineItem,
+	newLineItemData *dto.LineItem,
 	changeEventID uuid.UUID,
 ) (*uuid.UUID, error) {
 	if newLineItemData.SignupPromotion == nil {
@@ -94,10 +94,10 @@ func (s *playstoreSubscriptionService) updateSignupPromo(
 	var newPromoType models.SignupPromotionType
 	var newPromoCode *string
 
-	if newLineItemData.SignupPromotion.VanityCode != nil {
+	if newLineItemData.SignupPromotion.Type == dto.PromoTypeVanityCode {
 		newPromoType = models.SignupPromotionTypeVanity
-		newPromoCode = &newLineItemData.SignupPromotion.VanityCode.PromotionCode
-	} else if newLineItemData.SignupPromotion.OneTimeCode != nil {
+		newPromoCode = newLineItemData.SignupPromotion.Code
+	} else if newLineItemData.SignupPromotion.Type == dto.PromoTypeOneTimeCode {
 		newPromoType = models.SignupPromotionTypeOneTime
 		newPromoCode = nil
 	} else {
