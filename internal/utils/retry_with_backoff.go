@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"subsnotifpro-go/internal/logger"
+	"subsnotifpro-go/internal/pkg/logger"
 	"time"
 )
 

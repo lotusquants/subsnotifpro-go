@@ -3,7 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"net/http"
-	"subsnotifpro-go/internal/logger"
+	"subsnotifpro-go/internal/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )

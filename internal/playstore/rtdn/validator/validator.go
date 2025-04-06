@@ -3,7 +3,7 @@ package validator
 
 import (
 	"errors"
-	"subsnotifpro-go/internal/logger"
+	"subsnotifpro-go/internal/pkg/logger"
 	"subsnotifpro-go/internal/playstore/rtdn/dto"
 )
 

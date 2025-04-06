@@ -36,6 +36,12 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// // Initialize logger with options
+	// logger := logger.New(
+	// 	logger.WithLevel(logger.DebugLevel),
+	// 	logger.WithCaller(true),
+	// )
+
 	// ✅ Initialize RabbitMQ channel
 	ch, err := queue.GetChannel(ctx)
 	if err != nil {

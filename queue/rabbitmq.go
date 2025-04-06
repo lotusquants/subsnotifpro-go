@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"subsnotifpro-go/internal/pkg/logger"
 	"sync"
 	"time"
-
-	"subsnotifpro-go/internal/logger"
 
 	"github.com/streadway/amqp"
 )

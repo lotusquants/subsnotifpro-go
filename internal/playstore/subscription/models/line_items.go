@@ -7,19 +7,14 @@ import (
 	"gorm.io/gorm"
 )
 
+// enums
+
 type PlanType string
 
+// enum values
 const (
 	PlanTypeAutoRenewing PlanType = "AUTO_RENEWING"
 	PlanTypePrepaid      PlanType = "PREPAID"
-)
-
-type LineItemStatus string
-
-const (
-	LineItemStatusActive   LineItemStatus = "ACTIVE"
-	LineItemStatusExpired  LineItemStatus = "EXPIRED"
-	LineItemStatusCanceled LineItemStatus = "CANCELED"
 )
 
 // SubscriptionLineItem represents an individual component (base plan or add-on) of a subscription purchase.
@@ -32,9 +27,8 @@ type SubscriptionLineItem struct {
 	// 📦 Product/Plan info
 	ProductID string `gorm:"type:varchar(100);not null;index"`
 
-	ExpiryTime time.Time      `gorm:"not null;index"`
-	PlanType   PlanType       `gorm:"type:varchar(20);not null;index"` // AUTO_RENEWING or PREPAID
-	Status     LineItemStatus `gorm:"type:varchar(20);not null;index;default:ACTIVE"`
+	ExpiryTime time.Time `gorm:"not null;index"`
+	PlanType   PlanType  `gorm:"type:varchar(20);not null;index"` // AUTO_RENEWING or PREPAID
 
 	// 🧩 Optional Linked Entities
 	AutoRenewingPlanID *uuid.UUID        `gorm:"type:uuid;index;constraint:OnDelete:SET NULL"`
@@ -65,17 +59,8 @@ type SubscriptionLineItemHistory struct {
 	LineItemID uuid.UUID `gorm:"type:uuid;not null;index"`
 	PlanType   PlanType  `gorm:"type:varchar(20);not null"`
 
-	// AutoRenewingPlanID        *uuid.UUID `gorm:"type:uuid;index"`
-	// PrepaidPlanID             *uuid.UUID `gorm:"type:uuid;index"`
-	// OfferDetailsID            *uuid.UUID `gorm:"type:uuid;index"`
-	// DeferredItemReplacementID *uuid.UUID `gorm:"type:uuid;index"`
-	// SignupPromotionID         *uuid.UUID `gorm:"type:uuid;index"`
-
 	PreviousExpiryTime *time.Time `gorm:"null"`
 	CurrentExpiryTime  time.Time  `gorm:"not null"`
-
-	PreviousStatus *LineItemStatus `gorm:"type:varchar(20);null"`
-	CurrentStatus  LineItemStatus  `gorm:"type:varchar(20);not null"`
 
 	ChangedAt     time.Time `gorm:"autoCreateTime"`
 	ChangeEventID uuid.UUID `gorm:"type:uuid;not null;index"` // RTDN/Trigger ID

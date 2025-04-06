@@ -16,7 +16,7 @@ type SubscriptionPurchaseV2 struct {
 	PackageName    string    `gorm:"type:varchar(50);not null;index"`
 	StartTime      time.Time `gorm:"not null;index"`
 	LatestOrderID  string    `gorm:"type:varchar(50);not null;index"`
-	PurchaseToken  string    `gorm:"type:varchar(255);not null;uniqueIndex"`
+	PurchaseToken  string    `gorm:"type:varchar(255);not null;uniqueIndex:idx_subscription_purchase_token"`
 	IsTestPurchase bool      `gorm:"default:false"`
 
 	UserID uuid.UUID           `gorm:"type:uuid;not null;index;constraint:OnDelete:CASCADE"`
@@ -36,6 +36,19 @@ type SubscriptionPurchaseV2 struct {
 	LineItems                []SubscriptionLineItem `gorm:"foreignKey:SubscriptionID;constraint:OnDelete:CASCADE"`
 	LinkedPurchaseToken      *string                `gorm:"type:varchar(255);"`
 	LinkedFromSubscriptionID *uuid.UUID             `gorm:"type:uuid;index;constraint:OnDelete:SET NULL"`
+
+	CreatedAt time.Time      `gorm:"autoCreateTime;index"`
+	UpdatedAt time.Time      `gorm:"autoUpdateTime;index"`
+	DeletedAt gorm.DeletedAt `gorm:"index"`
+}
+
+type SubscriptionEvent struct {
+	ID             uuid.UUID               `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	SubscriptionID uuid.UUID               `gorm:"type:uuid;not null;index:idx_subscription_event"`
+	Subscription   *SubscriptionPurchaseV2 `gorm:"foreignKey:SubscriptionID;constraint:OnDelete:CASCADE"`
+
+	EventID   uuid.UUID `gorm:"type:uuid;not null;index:idx_subscription_event"`
+	EventType string    `gorm:"type:varchar(50);not null;index"` // e.g., "renewal", "cancellation", "pause", etc.
 
 	CreatedAt time.Time      `gorm:"autoCreateTime;index"`
 	UpdatedAt time.Time      `gorm:"autoUpdateTime;index"`

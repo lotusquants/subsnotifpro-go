@@ -14,7 +14,7 @@ import (
 	"subsnotifpro-go/internal/playstore/rtdn/service"
 	"subsnotifpro-go/internal/playstore/rtdn/validator"
 
-	"subsnotifpro-go/internal/logger"
+	"subsnotifpro-go/internal/pkg/logger"
 	"subsnotifpro-go/internal/utils"
 	"subsnotifpro-go/queue"
 

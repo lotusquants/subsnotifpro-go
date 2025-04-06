@@ -52,6 +52,7 @@ type PlaystoreSubscriptionRepository interface {
 	CreateDeferredReplacementHistory(ctx context.Context, tx *gorm.DB, replacement *models.DeferredItemReplacementHistory) error
 
 	CreateBulkSubscriptionLineItemHistory(ctx context.Context, tx *gorm.DB, entries []models.SubscriptionLineItemHistory) error
+	CreateSubscriptionEvent(ctx context.Context, tx *gorm.DB, event *models.SubscriptionEvent) error
 }
 
 type playstoreSubscriptionRepository struct{}
@@ -291,4 +292,33 @@ func (r *playstoreSubscriptionRepository) CreateBulkSubscriptionLineItemHistory(
 		return nil
 	}
 	return tx.WithContext(ctx).Create(&entries).Error
+}
+
+func (r *playstoreSubscriptionRepository) CreateSubscriptionEvent(ctx context.Context, tx *gorm.DB, event *models.SubscriptionEvent) error {
+	if event == nil {
+		return errors.New("nil event provided")
+	}
+
+	// Validate required fields
+	if event.SubscriptionID == uuid.Nil {
+		return errors.New("subscription ID cannot be empty")
+	}
+	if event.EventID == uuid.Nil {
+		return errors.New("event ID cannot be empty")
+	}
+	if event.EventType == "" {
+		return errors.New("event type cannot be empty")
+	}
+
+	// Create the event with context
+	result := tx.WithContext(ctx).Create(event)
+	if result.Error != nil {
+		return fmt.Errorf("database error: %w", result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		return errors.New("no rows affected - event not created")
+	}
+
+	return nil
 }

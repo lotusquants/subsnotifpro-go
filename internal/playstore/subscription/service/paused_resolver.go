@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"subsnotifpro-go/internal/playstore/api/dto"
-	rtdnModels "subsnotifpro-go/internal/playstore/rtdn/models"
+	rtdnDto "subsnotifpro-go/internal/playstore/rtdn/dto"
 	"subsnotifpro-go/internal/playstore/subscription/models"
 
 	"github.com/google/uuid"
@@ -20,22 +20,22 @@ func (s *playstoreSubscriptionService) ResolvePausedContext(
 	existing *models.SubscriptionPurchaseV2,
 	subData *dto.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
-	notificationType rtdnModels.SubscriptionNotificationType,
+	notificationType rtdnDto.SubscriptionNotificationType,
 ) (*uuid.UUID, error) {
 
 	pausedContext := existing.SubscriptionPausedContext
 
 	switch notificationType {
-	case rtdnModels.SubscriptionPauseScheduleChanged:
+	case rtdnDto.SubscriptionPauseScheduleChanged:
 		return s.handlePauseScheduleChanged(ctx, tx, pausedContext, subscriptionID, subData, changeEventID)
 
-	case rtdnModels.SubscriptionPaused:
+	case rtdnDto.SubscriptionPaused:
 		return s.handlePaused(ctx, tx, pausedContext, subscriptionID, subData, changeEventID)
 
-	case rtdnModels.SubscriptionRenewed:
+	case rtdnDto.SubscriptionRenewed:
 		return s.handleResumed(ctx, tx, pausedContext, subscriptionID, changeEventID)
 
-	case rtdnModels.SubscriptionExpired, rtdnModels.SubscriptionRevoked:
+	case rtdnDto.SubscriptionExpired, rtdnDto.SubscriptionRevoked:
 		return s.handleExpired(ctx, tx, pausedContext, subscriptionID, changeEventID)
 	}
 

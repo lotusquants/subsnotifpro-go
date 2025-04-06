@@ -6,7 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
-	"subsnotifpro-go/internal/logger"
+	"subsnotifpro-go/internal/pkg/logger"
 	"subsnotifpro-go/internal/playstore/settings/service"
 )
 

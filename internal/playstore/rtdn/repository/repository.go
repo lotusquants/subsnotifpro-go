@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"subsnotifpro-go/internal/logger"
 	"subsnotifpro-go/internal/pkg/contextutil"
+	"subsnotifpro-go/internal/pkg/logger"
 	"subsnotifpro-go/internal/playstore/rtdn/models"
 
 	"github.com/google/uuid"
@@ -120,12 +120,12 @@ func (r *rtdnRepository) IncrementRetryCount(ctx context.Context, eventID uuid.U
 		return fmt.Errorf("failed to increment retry count: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("event not found: %s", eventID)
+		return fmt.Errorf("event not found when trying to increment retry count: %s", eventID)
 	}
 	return nil
 }
 
-// internal/playstore/rtdn/repository/repository.go
+// Implementation
 func (r *rtdnRepository) Exists(ctx context.Context, id uuid.UUID) (bool, error) {
 	tx, ok := contextutil.TxFromContext(ctx)
 	if !ok {
@@ -133,12 +133,10 @@ func (r *rtdnRepository) Exists(ctx context.Context, id uuid.UUID) (bool, error)
 	}
 
 	var count int64
-	result := tx.Model(&models.GooglePlayWebhookEvent{}).
+	if err := tx.Model(&models.GooglePlayWebhookEvent{}).
 		Where("id = ?", id).
-		Count(&count)
-
-	if result.Error != nil {
-		return false, fmt.Errorf("failed to check event existence: %w", result.Error)
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("failed to check existence: %w", err)
 	}
 
 	return count > 0, nil

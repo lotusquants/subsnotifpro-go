@@ -48,6 +48,12 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 
+	// // Initialize logger with options
+	// logger := logger.New(
+	// 	logger.WithLevel(logger.DebugLevel),
+	// 	logger.WithCaller(true),
+	// )
+
 	// ✅ Load configuration
 	cfg := config.LoadConfig()
 

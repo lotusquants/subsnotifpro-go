@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"subsnotifpro-go/internal/playstore/api/dto"
-	rtdnModels "subsnotifpro-go/internal/playstore/rtdn/models"
+	rtdnDto "subsnotifpro-go/internal/playstore/rtdn/dto"
 	"subsnotifpro-go/internal/playstore/subscription/models"
 
 	"github.com/google/uuid"
@@ -19,19 +19,19 @@ func (s *playstoreSubscriptionService) ResolveCancellationContext(
 	existing *models.SubscriptionPurchaseV2,
 	subData *dto.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
-	notificationType rtdnModels.SubscriptionNotificationType,
+	notificationType rtdnDto.SubscriptionNotificationType,
 ) (*uuid.UUID, error) {
 
 	existingCtx := existing.SubscriptionCancellationContext
 
 	switch notificationType {
-	case rtdnModels.SubscriptionCanceled:
+	case rtdnDto.SubscriptionCanceled:
 		return s.handleCancelled(ctx, tx, subscriptionID, existingCtx, subData, changeEventID)
 
-	case rtdnModels.SubscriptionRestarted:
+	case rtdnDto.SubscriptionRestarted:
 		return s.handleResubscribed(ctx, tx, subscriptionID, existingCtx, changeEventID)
 
-	case rtdnModels.SubscriptionExpired, rtdnModels.SubscriptionRevoked:
+	case rtdnDto.SubscriptionExpired, rtdnDto.SubscriptionRevoked:
 		// Terminal state, no action for cancellation context
 		return nil, nil
 

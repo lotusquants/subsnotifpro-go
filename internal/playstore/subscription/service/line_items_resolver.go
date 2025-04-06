@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"subsnotifpro-go/internal/playstore/api/dto"
-	rtdnModels "subsnotifpro-go/internal/playstore/rtdn/models"
+	rtdnDto "subsnotifpro-go/internal/playstore/rtdn/dto"
 	"subsnotifpro-go/internal/playstore/subscription/models"
 
 	"github.com/google/uuid"
@@ -19,7 +19,7 @@ func (s *playstoreSubscriptionService) ResolveLineItems(
 	subscription *models.SubscriptionPurchaseV2,
 	subData *dto.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
-	notificationType rtdnModels.SubscriptionNotificationType,
+	notificationType rtdnDto.SubscriptionNotificationType,
 ) ([]models.SubscriptionLineItem, error) {
 	var resolvedItems []models.SubscriptionLineItem
 	var lineItemHistories []models.SubscriptionLineItemHistory
@@ -92,18 +92,17 @@ func (s *playstoreSubscriptionService) updateLineItemAndNestedModels(
 	existingLineItem *models.SubscriptionLineItem,
 	newItem *dto.LineItem,
 	changeEventID uuid.UUID,
-	notificationType rtdnModels.SubscriptionNotificationType,
+	notificationType rtdnDto.SubscriptionNotificationType,
 ) (*models.SubscriptionLineItem, *models.SubscriptionLineItemHistory, error) {
 
 	previousExpiry := existingLineItem.ExpiryTime
-	previousStatus := existingLineItem.Status
+
 	previousPlanType := existingLineItem.PlanType
 
 	newExpiryTime := newItem.ExpiryTime
 
 	// Update line item fields
 	existingLineItem.ExpiryTime = newExpiryTime
-	existingLineItem.Status = models.LineItemStatusActive
 
 	// Handle nested models
 	if err := s.resolveNestedModelsForUpdate(
@@ -124,9 +123,6 @@ func (s *playstoreSubscriptionService) updateLineItemAndNestedModels(
 		SubscriptionID:     subscriptionID,
 		PreviousExpiryTime: &previousExpiry,
 		CurrentExpiryTime:  newExpiryTime,
-		PreviousStatus:     &previousStatus,
-		CurrentStatus:      models.LineItemStatusActive,
-		ChangedAt:          time.Now(),
 		ChangeEventID:      changeEventID,
 		Reason:             notificationType.String() + " rtdn",
 	}
@@ -152,7 +148,6 @@ func (s *playstoreSubscriptionService) createLineItemWithNestedModels(
 		SubscriptionID: subscriptionID,
 		ProductID:      newLineItemData.ProductID,
 		ExpiryTime:     newExpiryTime,
-		Status:         models.LineItemStatusActive,
 	}
 
 	// Handle nested models
@@ -173,10 +168,10 @@ func (s *playstoreSubscriptionService) createLineItemWithNestedModels(
 		SubscriptionID:    subscriptionID,
 		PlanType:          newLineItemModel.PlanType,
 		CurrentExpiryTime: newLineItemModel.ExpiryTime,
-		CurrentStatus:     newLineItemModel.Status,
-		ChangedAt:         time.Now(),
-		ChangeEventID:     changeEventID,
-		Reason:            "New line item created",
+
+		ChangedAt:     time.Now(),
+		ChangeEventID: changeEventID,
+		Reason:        "New line item created",
 	}
 
 	return newLineItemModel, history, nil
@@ -196,8 +191,6 @@ func (s *playstoreSubscriptionService) handleExpiredLineItem(
 	}
 
 	// Mark line item as expired
-	activeStatus := models.LineItemStatusActive
-	expiredItem.Status = models.LineItemStatusExpired
 	if err := tx.Save(expiredItem).Error; err != nil {
 		return fmt.Errorf("failed to mark line item as expired: %w", err)
 	}
@@ -208,9 +201,6 @@ func (s *playstoreSubscriptionService) handleExpiredLineItem(
 		PlanType:           expiredItem.PlanType,
 		PreviousExpiryTime: &expiredItem.ExpiryTime,
 		CurrentExpiryTime:  expiredItem.ExpiryTime,
-		PreviousStatus:     &activeStatus,
-		CurrentStatus:      models.LineItemStatusExpired,
-		ChangedAt:          time.Now(),
 		ChangeEventID:      changeEventID,
 		Reason:             "Expired (not in new data)",
 	}

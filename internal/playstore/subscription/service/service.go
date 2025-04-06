@@ -8,15 +8,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"subsnotifpro-go/internal/playstore/api/dto"
+	"subsnotifpro-go/internal/pkg/contextutil"
+	"subsnotifpro-go/internal/pkg/logger"
+
+	apiDto "subsnotifpro-go/internal/playstore/api/dto"
 	playstoreApiService "subsnotifpro-go/internal/playstore/api/service"
 	playstoreCatalogService "subsnotifpro-go/internal/playstore/products/service"
-	rtdnModels "subsnotifpro-go/internal/playstore/rtdn/models"
+	rtdnDto "subsnotifpro-go/internal/playstore/rtdn/dto"
 	"subsnotifpro-go/internal/playstore/subscription/mapper"
 	"subsnotifpro-go/internal/playstore/subscription/models"
 	"subsnotifpro-go/internal/playstore/subscription/repository"
@@ -24,7 +26,7 @@ import (
 )
 
 type PlaystoreSubscriptionService interface {
-	UpsertSubscription(ctx context.Context, subData *dto.SubscriptionPurchaseV2, event *rtdnModels.GooglePlayWebhookEvent) error
+	UpsertSubscription(ctx context.Context, subData *apiDto.SubscriptionPurchaseV2, event *rtdnDto.GooglePlayWebhookEvent) error
 }
 
 type playstoreSubscriptionService struct {
@@ -54,57 +56,61 @@ func NewPlaystoreSubscriptionService(
 
 func (s *playstoreSubscriptionService) UpsertSubscription(
 	ctx context.Context,
-	subData *dto.SubscriptionPurchaseV2,
-	event *rtdnModels.GooglePlayWebhookEvent,
+	subData *apiDto.SubscriptionPurchaseV2,
+	event *rtdnDto.GooglePlayWebhookEvent,
 ) error {
 
-	log.Println("event = ", event)
-	log.Println("data = ", subData)
+	logger.Log.Infof("Processing subscription for purchase token %s", event.Subscription.PurchaseToken)
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 1️⃣ Validate and extract essential fields
-		purchaseToken := event.Subscription.PurchaseToken
-		subscriptionProductId := event.Subscription.SubscriptionID
-		notificationType := event.Subscription.NotificationType
-		packageName := event.PackageName
+	// Get transaction from context instead of creating a new one
+	tx, ok := contextutil.TxFromContext(ctx)
+	if !ok {
+		return fmt.Errorf("no transaction found in context - transaction must be started at rtdn consumer level")
+	}
 
-		if purchaseToken == "" || packageName == "" || subscriptionProductId == "" {
-			return fmt.Errorf("missing required fields: purchaseToken, packageName or subscriptionProductId")
-		}
+	// 1️⃣ Validate and extract essential fields
+	purchaseToken := event.Subscription.PurchaseToken
+	subscriptionProductId := event.Subscription.SubscriptionID
+	notificationType := event.Subscription.NotificationType
+	packageName := event.PackageName
 
-		// 2️⃣ Resolve AppUser (Resove ObfuscatedExternalAccountID)
-		if subData.ExternalAccountIdentifiers.ObfuscatedExternalAccountID == nil {
-			return fmt.Errorf("missing obfuscatedExternalAccountId")
-		}
+	if purchaseToken == "" || packageName == "" || subscriptionProductId == "" {
+		return fmt.Errorf("missing required fields: purchaseToken, packageName or subscriptionProductId")
+	}
 
-		obfuscatedID := *subData.ExternalAccountIdentifiers.ObfuscatedExternalAccountID
-		if obfuscatedID == "" {
-			return fmt.Errorf("missing obfuscatedExternalAccountId")
-		}
+	// 2️⃣ Resolve AppUser (Resove ObfuscatedExternalAccountID)
+	if subData.ExternalAccountIdentifiers.ObfuscatedExternalAccountID == nil {
+		return fmt.Errorf("missing obfuscatedExternalAccountId")
+	}
 
-		//
-		appUserID, err := s.playstoreUserService.GetOrCreateUserIDFromObfuscatedExternalAccountID(
-			ctx, tx, obfuscatedID, mapper.BuildGoogleAccountModel(subData),
-		)
-		if err != nil {
-			return fmt.Errorf("failed to resolve AppUser: %w", err)
-		}
+	obfuscatedID := *subData.ExternalAccountIdentifiers.ObfuscatedExternalAccountID
+	if obfuscatedID == "" {
+		return fmt.Errorf("missing obfuscatedExternalAccountId")
+	}
 
-		// 3️⃣ Check for existing subscription
-		existing, err := s.repo.GetSubscriptionByPurchaseToken(ctx, tx, purchaseToken)
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("failed to check subscription existence: %w", err)
-		}
+	// Get or create App User
+	appUserID, err := s.playstoreUserService.GetOrCreateUserIDFromObfuscatedExternalAccountID(
+		ctx, tx, obfuscatedID, mapper.BuildGoogleAccountModel(subData),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve AppUser: %w", err)
+	}
 
-		// 5️⃣ Branch based on whether subscription exists
-		if existing == nil {
-			// 🆕 CREATE NEW SUBSCRIPTION PATH
-			return s.createNewSubscription(ctx, tx, appUserID, packageName, purchaseToken, subData, subscriptionProductId, notificationType, event.ID)
-		} else {
-			// 🔁 UPDATE EXISTING SUBSCRIPTION PATH
-			return s.updateExistingSubscription(ctx, tx, existing, subData, notificationType, event.ID)
-		}
-	})
+	// 3️⃣ Check for existing subscription
+	existing, err := s.repo.GetSubscriptionByPurchaseToken(ctx, tx, purchaseToken)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("failed to check subscription existence: %w", err)
+	}
+
+	// 5️⃣ Branch based on whether subscription exists
+	if existing == nil {
+		// 🆕 CREATE NEW SUBSCRIPTION PATH
+		return s.createNewSubscription(ctx, tx, appUserID, packageName, purchaseToken, subData, subscriptionProductId, notificationType, event.ID)
+	} else {
+		// 🔁 UPDATE EXISTING SUBSCRIPTION PATH
+		return s.updateExistingSubscription(ctx, tx, existing, subData, notificationType, event.ID)
+	}
+
 }
 
 func (s *playstoreSubscriptionService) createNewSubscription(
@@ -113,9 +119,9 @@ func (s *playstoreSubscriptionService) createNewSubscription(
 	appUserID uuid.UUID,
 	packageName string,
 	purchaseToken string,
-	subData *dto.SubscriptionPurchaseV2,
+	subData *apiDto.SubscriptionPurchaseV2,
 	subscriptionProductId string,
-	notificationType rtdnModels.SubscriptionNotificationType,
+	notificationType rtdnDto.SubscriptionNotificationType,
 	changeEventID uuid.UUID,
 ) error {
 	// 1. Validate essential fields first
@@ -146,15 +152,15 @@ func (s *playstoreSubscriptionService) createNewSubscription(
 		return fmt.Errorf("failed to insert base subscription: %w", err)
 	}
 
-	// // 4. Create change event
-	// changeEventID, err := s.repo.CreateSubscriptionChangeEvent(ctx, tx, &models.SubscriptionChangeEvent{
-	// 	ID:               eventID,
-	// 	SubscriptionID:   subscriptionID,
-	// 	NotificationType: notificationType,
-	// })
-	// if err != nil {
-	// 	return fmt.Errorf("failed to create change event: %w", err)
-	// }
+	// 4. Create change event
+	err := s.repo.CreateSubscriptionEvent(ctx, tx, &models.SubscriptionEvent{
+		SubscriptionID: subscriptionID,
+		EventID:        changeEventID,
+		EventType:      notificationType.String(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create change event: %w", err)
+	}
 
 	// 5. Record initial state transitions
 	if err := s.recordInitialStateTransitions(
@@ -202,7 +208,7 @@ func (s *playstoreSubscriptionService) createNewSubscription(
 
 // Helper functions for better organization:
 
-func validateSubscriptionData(subData *dto.SubscriptionPurchaseV2) error {
+func validateSubscriptionData(subData *apiDto.SubscriptionPurchaseV2) error {
 	if subData.RegionCode == "" {
 		return errors.New("region code cannot be empty")
 	}
@@ -241,7 +247,7 @@ func (s *playstoreSubscriptionService) recordInitialStateTransitions(
 func (s *playstoreSubscriptionService) processLinkedPurchaseToken(
 	ctx context.Context,
 	tx *gorm.DB,
-	subData *dto.SubscriptionPurchaseV2,
+	subData *apiDto.SubscriptionPurchaseV2,
 	subscriptionID uuid.UUID,
 	purchaseToken string,
 	changeEventID uuid.UUID,
@@ -289,19 +295,19 @@ func (s *playstoreSubscriptionService) updateExistingSubscription(
 	ctx context.Context,
 	tx *gorm.DB,
 	existing *models.SubscriptionPurchaseV2,
-	subData *dto.SubscriptionPurchaseV2,
-	notificationType rtdnModels.SubscriptionNotificationType,
+	subData *apiDto.SubscriptionPurchaseV2,
+	notificationType rtdnDto.SubscriptionNotificationType,
 	changeEventID uuid.UUID,
 ) error {
 	// // 1. Create change event first
-	// changeEventID, err := s.repo.CreateSubscriptionChangeEvent(ctx, tx, &models.SubscriptionChangeEvent{
-	// 	ID:               eventID,
-	// 	SubscriptionID:   existing.ID,
-	// 	NotificationType: notificationType,
-	// })
-	// if err != nil {
-	// 	return fmt.Errorf("failed to create change event: %w", err)
-	// }
+	err := s.repo.CreateSubscriptionEvent(ctx, tx, &models.SubscriptionEvent{
+		SubscriptionID: existing.ID,
+		EventID:        changeEventID,
+		EventType:      notificationType.String(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create change event: %w", err)
+	}
 
 	// 3. Resolve all dependent models
 	updateFields := make(map[string]interface{})
@@ -353,7 +359,7 @@ func (s *playstoreSubscriptionService) processStateTransitions(
 	ctx context.Context,
 	tx *gorm.DB,
 	existing *models.SubscriptionPurchaseV2,
-	subData *dto.SubscriptionPurchaseV2,
+	subData *apiDto.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
 	updateFields map[string]interface{},
 ) error {
@@ -383,9 +389,9 @@ func (s *playstoreSubscriptionService) processContextUpdates(
 	ctx context.Context,
 	tx *gorm.DB,
 	existing *models.SubscriptionPurchaseV2,
-	subData *dto.SubscriptionPurchaseV2,
+	subData *apiDto.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
-	notificationType rtdnModels.SubscriptionNotificationType,
+	notificationType rtdnDto.SubscriptionNotificationType,
 	updateFields map[string]interface{},
 ) error {
 	// Paused context
@@ -415,7 +421,7 @@ func (s *playstoreSubscriptionService) processLinkedPurchaseTokenUpdate(
 	ctx context.Context,
 	tx *gorm.DB,
 	existing *models.SubscriptionPurchaseV2,
-	subData *dto.SubscriptionPurchaseV2,
+	subData *apiDto.SubscriptionPurchaseV2,
 	changeEventID uuid.UUID,
 	updateFields map[string]interface{},
 ) error {

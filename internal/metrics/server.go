@@ -4,10 +4,9 @@ package metrics
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
-
-	"subsnotifpro-go/internal/logger"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -31,18 +30,18 @@ func StartMetricsServer(ctx context.Context) {
 		w.Write([]byte("OK"))
 	})
 
-	logger.Log.Infof("📊 Prometheus metrics available at http://localhost:%s/metrics", port)
+	log.Println("📊 Prometheus metrics available at http://localhost:%s/metrics", port)
 
 	go func() {
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-			logger.Log.Fatal("❌ Failed to start Prometheus metrics server:", err)
+			log.Fatal("❌ Failed to start Prometheus metrics server:", err)
 		}
 	}()
 
 	// ✅ Graceful shutdown for metrics server
 	go func() {
 		<-ctx.Done()
-		logger.Log.Warn("🚦 Stopping Prometheus metrics server...")
+		log.Println("🚦 Stopping Prometheus metrics server...")
 		srv.Shutdown(context.Background())
 	}()
 }

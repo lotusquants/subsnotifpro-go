@@ -30,6 +30,9 @@ var AllModels = []interface{}{
 	&playstoreRtdnModels.GooglePlayWebhookEvent{},
 
 	// Core Google playstore Subscription Models
+	&playstoreSubscriptionModels.SubscriptionPurchaseV2{},
+	&playstoreSubscriptionModels.SubscriptionLineItem{},
+	&playstoreSubscriptionModels.SubscriptionLineItemHistory{},
 
 	&playstoreSubscriptionModels.AcknowledgementStateTransitionHistory{},
 	&playstoreSubscriptionModels.AutoRenewingPlan{},
@@ -40,8 +43,7 @@ var AllModels = []interface{}{
 	&playstoreSubscriptionModels.DeferredItemReplacementHistory{},
 	&playstoreSubscriptionModels.InstallmentPlan{},
 	&playstoreSubscriptionModels.InstallmentPlanHistory{},
-	&playstoreSubscriptionModels.SubscriptionLineItem{},
-	&playstoreSubscriptionModels.SubscriptionLineItemHistory{},
+
 	&playstoreSubscriptionModels.OfferDetails{},
 	&playstoreSubscriptionModels.OfferDetailsHistory{},
 	&playstoreSubscriptionModels.SubscriptionPausedContext{},
@@ -53,10 +55,11 @@ var AllModels = []interface{}{
 
 	&playstoreSubscriptionModels.SignupPromotion{},
 	&playstoreSubscriptionModels.SignupPromotionHistory{},
-	&playstoreSubscriptionModels.SubscriptionPurchaseV2{},
+
 	&playstoreSubscriptionModels.SubscriptionOrderIdTransitionHistory{},
 
 	&playstoreSubscriptionModels.SubscriptionStateTransitionHistory{},
+	&playstoreSubscriptionModels.SubscriptionEvent{},
 
 	// 🔹 Subscription Sync Models
 	&playstoreSubscriptionCatalogModels.ProductSubscription{},

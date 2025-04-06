@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"regexp"
 
-	"subsnotifpro-go/internal/logger"
+	"subsnotifpro-go/internal/pkg/logger"
 	"subsnotifpro-go/internal/playstore/api/service"
 
 	"github.com/gin-gonic/gin"

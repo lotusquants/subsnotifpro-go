@@ -15,6 +15,7 @@ const (
 	TxKey          contextKey = "gormTx"
 	DeliveryCtxKey contextKey = "amqp-delivery"
 	RetryCountKey  contextKey = "retry-count"
+	requestIDKey   contextKey = "request_id"
 )
 
 func ContextWithDelivery(ctx context.Context, msg *amqp.Delivery) context.Context {
