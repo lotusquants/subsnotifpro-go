@@ -14,6 +14,7 @@ import (
 const (
 	defaultPublishTimeout = 5 * time.Second
 	retryHeader           = "x-retry-count"
+	delayHeader           = "x-delay"
 )
 
 var (
@@ -23,20 +24,26 @@ var (
 
 // MessagePublisher defines the interface for publishing messages
 type MessagePublisher interface {
-	Publish(ctx context.Context, queueName string, event interface{}) error
-	PublishWithDelay(ctx context.Context, queueName string, event interface{}, delay time.Duration) error
+	PublishToQueue(ctx context.Context, queueName string, event interface{}) error
+	PublishToExchange(ctx context.Context, exchange, routingKey string, event interface{}) error
+	PublishWithDelay(ctx context.Context, exchange, routingKey string, event interface{}, delay time.Duration) error
 }
 
 type RabbitMQPublisher struct {
 	ch *amqp.Channel
-	// metrics PublisherMetrics // interface you define
+	// metrics PublisherMetrics // Optional metrics interface
 }
 
 type PublisherOptions struct {
 	Channel *amqp.Channel
-	// Metrics      PublisherMetrics
-	DefaultQueue string
+	// Metrics PublisherMetrics
 }
+
+// type PublisherMetrics interface {
+// 	IncPublishSuccess(exchange, routingKey string)
+// 	IncPublishFailure(exchange, routingKey string)
+// 	ObservePublishLatency(exchange string, duration time.Duration)
+// }
 
 func NewRabbitMQPublisher(opts PublisherOptions) *RabbitMQPublisher {
 	return &RabbitMQPublisher{
@@ -45,47 +52,69 @@ func NewRabbitMQPublisher(opts PublisherOptions) *RabbitMQPublisher {
 	}
 }
 
-func (p *RabbitMQPublisher) Publish(ctx context.Context, queueName string, event interface{}) error {
-	return p.publish(ctx, queueName, event, 0)
+// PublishToQueue publishes directly to a queue (legacy support)
+func (p *RabbitMQPublisher) PublishToQueue(ctx context.Context, queueName string, event interface{}) error {
+	return p.publish(ctx, "", queueName, event, 0)
 }
 
-func (p *RabbitMQPublisher) PublishWithDelay(ctx context.Context, queueName string, event interface{}, delay time.Duration) error {
-	return p.publish(ctx, queueName, event, delay)
+// PublishToExchange publishes to an exchange with routing key
+func (p *RabbitMQPublisher) PublishToExchange(
+	ctx context.Context,
+	exchange string,
+	routingKey string,
+	event interface{},
+) error {
+	return p.publish(ctx, exchange, routingKey, event, 0)
 }
 
-func (p *RabbitMQPublisher) publish(ctx context.Context, queueName string, event interface{}, delay time.Duration) error {
+// PublishWithDelay publishes with a delay using delayed exchange plugin
+func (p *RabbitMQPublisher) PublishWithDelay(
+	ctx context.Context,
+	exchange string,
+	routingKey string,
+	event interface{},
+	delay time.Duration,
+) error {
+	return p.publish(ctx, exchange, routingKey, event, delay)
+}
+
+// publish handles the core publishing logic
+func (p *RabbitMQPublisher) publish(
+	ctx context.Context,
+	exchange string,
+	routingKey string,
+	event interface{},
+	delay time.Duration,
+) error {
 	if p.ch == nil {
 		return ErrNilChannel
 	}
 
+	// startTime := time.Now()
 	var body []byte
 	var headers amqp.Table
 
+	// Handle different input types
 	switch v := event.(type) {
 	case amqp.Publishing:
 		body = v.Body
 		headers = v.Headers
-		if headers == nil {
-			headers = make(amqp.Table)
-		}
 	case amqp.Delivery:
 		body = v.Body
-		headers = make(amqp.Table)
-		for k, val := range v.Headers {
-			headers[k] = val
-		}
+		headers = v.Headers
 	default:
 		var err error
 		body, err = json.Marshal(event)
 		if err != nil {
 			return fmt.Errorf("marshal failed: %w", err)
 		}
+	}
+
+	if headers == nil {
 		headers = make(amqp.Table)
 	}
 
-	// Debug log the headers before publishing
-	log.Printf("Publishing with headers: %+v", headers)
-
+	// Prepare publishing
 	publishing := amqp.Publishing{
 		ContentType:  "application/json",
 		Body:         body,
@@ -94,37 +123,54 @@ func (p *RabbitMQPublisher) publish(ctx context.Context, queueName string, event
 		Headers:      headers,
 	}
 
+	// Handle delayed messages
 	if delay > 0 {
-		publishing.Headers["x-delay"] = int64(delay / time.Millisecond)
+		publishing.Headers[delayHeader] = int64(delay / time.Millisecond)
 	}
 
+	// Set up context with timeout
 	publishCtx, cancel := context.WithTimeout(ctx, defaultPublishTimeout)
 	defer cancel()
 
+	// Execute publish in goroutine to handle timeouts
 	done := make(chan error, 1)
 	go func() {
+		err := p.ch.Publish(
+			exchange,
+			routingKey,
+			false, // mandatory
+			false, // immediate
+			publishing,
+		)
 		select {
+		case done <- err:
 		case <-publishCtx.Done():
-			done <- ErrPublishTimeout
-		default:
-			done <- p.ch.Publish(
-				"", // exchange
-				queueName,
-				false,
-				false,
-				publishing,
-			)
+			return
 		}
 	}()
 
+	// Wait for completion or timeout
+	var err error
 	select {
-	case err := <-done:
-		if err != nil {
-			return fmt.Errorf("publish to queue %s failed: %w", queueName, err)
-		}
+	case err = <-done:
 	case <-publishCtx.Done():
-		return ErrPublishTimeout
+		err = ErrPublishTimeout
 	}
 
+	// // Record metrics if available
+	// if p.metrics != nil {
+	// 	if err == nil {
+	// 		p.metrics.IncPublishSuccess(exchange, routingKey)
+	// 		p.metrics.ObservePublishLatency(exchange, time.Since(startTime))
+	// 	} else {
+	// 		p.metrics.IncPublishFailure(exchange, routingKey)
+	// 	}
+	// }
+
+	if err != nil {
+		return fmt.Errorf("publish to exchange %s with key %s failed: %w", exchange, routingKey, err)
+	}
+
+	log.Printf("Published to exchange %s with routing key %s", exchange, routingKey)
 	return nil
 }

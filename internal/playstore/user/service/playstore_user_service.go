@@ -35,21 +35,43 @@ func (s *playstoreUserService) GetOrCreateUserIDFromObfuscatedExternalAccountID(
 	obfuscatedID string,
 	googleAccount *playstoreModels.GoogleAccount,
 ) (uuid.UUID, error) {
-	// 1️⃣ Get or create the AppUser using users service
+	if googleAccount == nil {
+		return uuid.Nil, fmt.Errorf("google account cannot be nil")
+	}
+
+	// 1. Ensure ID is set
+	if googleAccount.ID == uuid.Nil {
+		googleAccount.ID = uuid.New()
+	}
+
+	// 2. Get or create AppUser
 	appUserID, err := s.userService.CreateAppUserIfNotExists(ctx, tx, obfuscatedID, "GOOGLE_PLAYSTORE")
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("failed to get/create AppUser: %w", err)
 	}
 
-	// 2️⃣ Assign AppUserID to the GoogleAccount model
+	// 3. Set AppUserID on GoogleAccount
 	googleAccount.AppUserID = appUserID.String()
 
-	// 3️⃣ Save or update GoogleAccount entry
-	err = s.playstoreUserRepo.UpsertGoogleAccount(ctx, tx, googleAccount)
+	// 4. FIRST save GoogleAccount and ensure it's committed
+	persistedAccount, err := s.playstoreUserRepo.UpsertGoogleAccount(ctx, tx, googleAccount)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("failed to upsert GoogleAccount: %w", err)
 	}
 
-	// ✅ Done
+	// 5. Verify the GoogleAccount exists before linking
+	exists, err := s.playstoreUserRepo.GoogleAccountExists(ctx, tx, persistedAccount.ID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("failed to verify GoogleAccount: %w", err)
+	}
+	if !exists {
+		return uuid.Nil, fmt.Errorf("GoogleAccount %s does not exist", persistedAccount.ID)
+	}
+
+	// 6. Now link the accounts
+	if err := s.userService.LinkGoogleAccount(ctx, tx, appUserID, persistedAccount.ID); err != nil {
+		return uuid.Nil, fmt.Errorf("failed to link GoogleAccount to user: %w", err)
+	}
+
 	return appUserID, nil
 }

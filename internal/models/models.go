@@ -1,12 +1,16 @@
 package models
 
 import (
+	appstoreSettingsModels "subsnotifpro-go/internal/appstore/settings/models"
+	appstoreSubscriptionModels "subsnotifpro-go/internal/appstore/subscription/models"
+	appstoreWebhookModels "subsnotifpro-go/internal/appstore/webhooks/models"
 	orgModels "subsnotifpro-go/internal/organization/models"
 	playstoreSubscriptionCatalogModels "subsnotifpro-go/internal/playstore/products/models"
 	playstoreRtdnModels "subsnotifpro-go/internal/playstore/rtdn/models"
 	playstoreSettingsModels "subsnotifpro-go/internal/playstore/settings/models"
 	playstoreSubscriptionModels "subsnotifpro-go/internal/playstore/subscription/models"
 	playstoreUserModels "subsnotifpro-go/internal/playstore/user/models"
+	unifiedSubscriptionModels "subsnotifpro-go/internal/subscription/models"
 	usersModels "subsnotifpro-go/internal/users/models"
 )
 
@@ -93,4 +97,22 @@ var AllModels = []interface{}{
 	// 🔹 Shared Models
 	&playstoreSubscriptionCatalogModels.Money{},
 	&playstoreSubscriptionCatalogModels.OfferTag{},
+
+	//AppStore
+	&appstoreSubscriptionModels.AppStoreSubscription{},
+	&appstoreSubscriptionModels.ConsumptionRequest{},
+	&appstoreSubscriptionModels.AppStoreSubscriptionEvent{},
+	&appstoreWebhookModels.AppStoreNotification{},
+	&appstoreWebhookModels.JWSDecodedHeader{},
+	&appstoreWebhookModels.ResponseBodyV2DecodedPayload{},
+	&appstoreWebhookModels.AppStoreNotificationData{},
+	&appstoreWebhookModels.AppStoreNotificationSummary{},
+	&appstoreWebhookModels.JWSTransaction{},
+	&appstoreWebhookModels.JWSTransactionDecodedPayload{},
+	&appstoreWebhookModels.JWSRenewalInfo{},
+	&appstoreWebhookModels.JWSRenewalInfoDecodedPayload{},
+	&appstoreSettingsModels.AppStoreSettings{},
+
+	// unified subscription models
+	unifiedSubscriptionModels.UnifiedSubscription{},
 }

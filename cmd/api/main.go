@@ -8,14 +8,20 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	appStoreDistpatch "subsnotifpro-go/internal/appstore/dispatch"
+	appStoreSettingsHandler "subsnotifpro-go/internal/appstore/settings/handler"
+	appStoreSettingsRepo "subsnotifpro-go/internal/appstore/settings/repository"
+	appStoreSettingsService "subsnotifpro-go/internal/appstore/settings/service"
+	appStoreSubscriptionService "subsnotifpro-go/internal/appstore/subscription/service"
+	appStoreUserService "subsnotifpro-go/internal/appstore/user/service"
+	appStoreWebhookHandler "subsnotifpro-go/internal/appstore/webhooks/handler"
+	appStoreWebhookService "subsnotifpro-go/internal/appstore/webhooks/service"
 	"subsnotifpro-go/internal/constants"
 	messaging "subsnotifpro-go/internal/pkg/messaging"
-	dispatch "subsnotifpro-go/internal/playstore/dispatch"
-
 	playstoreApiHandler "subsnotifpro-go/internal/playstore/api/handler"
 	playstoreApiService "subsnotifpro-go/internal/playstore/api/service"
 	playstoreClientService "subsnotifpro-go/internal/playstore/client/service"
-
+	dispatch "subsnotifpro-go/internal/playstore/dispatch"
 	playstoreCatalogHandler "subsnotifpro-go/internal/playstore/products/handler"
 	playstoreCatalogRepo "subsnotifpro-go/internal/playstore/products/repository"
 	playstoreCatalogService "subsnotifpro-go/internal/playstore/products/service"
@@ -29,8 +35,13 @@ import (
 	playstoreSubscriptionService "subsnotifpro-go/internal/playstore/subscription/service"
 	playstoreUserRepo "subsnotifpro-go/internal/playstore/user/repository"
 	playstoreUserService "subsnotifpro-go/internal/playstore/user/service"
+	unifiedSubscriptionHandler "subsnotifpro-go/internal/subscription/handler"
+	unifiedPublisher "subsnotifpro-go/internal/subscription/publisher"
+	unifiedSubscriptionRepo "subsnotifpro-go/internal/subscription/repository"
+	unifiedSubscriptionService "subsnotifpro-go/internal/subscription/service"
 	userRepo "subsnotifpro-go/internal/users/repository"
 	userService "subsnotifpro-go/internal/users/service"
+
 	"sync"
 	"syscall"
 	"time"
@@ -46,6 +57,8 @@ import (
 func main() {
 	// ✅ Create shutdown context
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	var wg sync.WaitGroup
 
 	// // Initialize logger with options
@@ -62,28 +75,37 @@ func main() {
 	if err != nil {
 		log.Fatalf("❌ Database connection failed: %v", err)
 	}
+	defer database.CloseDatabase(db)
+
 	database.AutoMigrateTables(db)       // Auto-migrate tables
 	migrations.ApplyCompositeIndexes(db) // Apply the composite indexes
+	// Create materialized views
+	migrations.CreateMaterializedViews(db)
+	// Create view indexes
+	migrations.CreateViewIndexes(db)
 
-	// ✅ Get a **single** RabbitMQ Channel (initialized here)
-	ch, err := queue.GetChannel(ctx)
+	// Initialize RabbitMQ connection manager
+	rmqManager := queue.NewRabbitMQManager(ctx, cfg.RabbitMQ)
+	defer rmqManager.Close()
+
+	// Get RabbitMQ channel
+	ch, err := rmqManager.GetChannel()
 	if err != nil {
-		log.Fatal("❌ Failed to connect to RabbitMQ:", err)
-		return
+		log.Fatalf("❌ Failed to get RabbitMQ channel: %v", err)
 	}
-	defer queue.CloseRabbitMQ()
+	defer ch.Close()
 
-	// ✅ Initialize RabbitMQ (Queues, Exchanges, Bindings)
-	queue.InitializeRabbitMQ(ch)
-
-	// ✅ Start background services
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		queue.MonitorRabbitMQConnection(ctx)
-	}()
+	// Initialize RabbitMQ infrastructure
+	if err := rmqManager.InitializeRabbitMQ(ctx, ch); err != nil {
+		log.Fatalf("❌ Failed to initialize RabbitMQ: %v", err)
+	}
 
 	// ✅ Initialize Repositories, Services and Handlers
+
+	log.Println("🔧  Initializing Playstore Services...")
+
+	psClientService := playstoreClientService.NewPlaystoreClientService()
+	psApiService := playstoreApiService.NewPlaystoreApiService(psClientService)
 
 	psRtdnRepo := playstoreRTDNRepo.NewRTDNRepository(db)
 	psSettingsRepo := playstoreSettingRepo.NewPlaystoreSettingsRepository(db)
@@ -97,13 +119,24 @@ func main() {
 		// Metrics: metrics.NewPublisherMetrics(),
 	})
 
+	// 2. Create unified event publisher
+	unifiedPublisher := unifiedPublisher.NewUnifiedEventPublisher(unifiedPublisher.UnifiedPublisherOpts{
+		Publisher:  msgPublisher,
+		Exchange:   cfg.RabbitMQ.UnifiedSubs.Exchange,
+		RoutingKey: cfg.RabbitMQ.UnifiedSubs.RoutingKey,
+		MaxRetries: cfg.RabbitMQ.MaxRetries,
+		RetryDelay: cfg.RabbitMQ.RetryDelay,
+	})
+
+	dashboardRepo := unifiedSubscriptionRepo.NewDashboardRepository(db)
+	dashboardSvc := unifiedSubscriptionService.NewDashboardService(dashboardRepo, 15*time.Minute)
+	unifiedSubscriptionRepo := unifiedSubscriptionRepo.NewSubscriptionRepository(db)
+	unifiedSubscriptionService := unifiedSubscriptionService.NewUnifiedSubscriptionService(db, unifiedPublisher, dashboardSvc, unifiedSubscriptionRepo)
+
 	// Create domain-specific publishers
-	googlePlayPublisher := dispatch.NewGooglePlayPublisher(msgPublisher)
+	googlePlayPublisher := dispatch.NewGooglePlayPublisher(msgPublisher, cfg)
 
 	// ✅ Create a temporary placeholder for settingsService (declare first)
-	// ✅ Step 1: Declare placeholder
-	psClientService := playstoreClientService.NewPlaystoreClientService()
-	psApiService := playstoreApiService.NewPlaystoreApiService(psClientService)
 
 	userRepo := userRepo.NewUserRepository()
 	userService := userService.NewUserService(userRepo)
@@ -118,9 +151,9 @@ func main() {
 
 	subscriptionRepo := playstoreSubscriptionRepository.NewPlaystoreSubscriptionRepository()
 
-	subscriptionService := playstoreSubscriptionService.NewPlaystoreSubscriptionService(db, subscriptionRepo, psUserService, psApiService, psCatalogService)
+	subscriptionService := playstoreSubscriptionService.NewPlaystoreSubscriptionService(db, subscriptionRepo, psUserService, psApiService, psCatalogService, unifiedSubscriptionService)
 
-	psRtdnService := playstoreRTDNService.NewRTDNService(ctx, psRtdnRepo, psApiService, subscriptionService, db, googlePlayPublisher)
+	psRtdnService := playstoreRTDNService.NewRTDNService(ctx, psRtdnRepo, psApiService, subscriptionService, db, googlePlayPublisher, rmqManager, &cfg.RabbitMQ)
 	psSettingsService := playstoreSettingServicePkg.NewPlaystoreSettingsService(psSettingsRepo, psApiService, db)
 	psClientService.SetAccountProvider(psSettingsService) // this works via interface
 
@@ -130,12 +163,35 @@ func main() {
 	psApiHandler := playstoreApiHandler.NewPlaystoreClientHandler(psApiService)
 	psSubscriptionCatalogService := playstoreCatalogService.NewSubscriptionCatalogService(ctx, psSubscriptionCatalogRepo, psApiService)
 	psSubscriptionCatalogHandler := playstoreCatalogHandler.NewSubscriptionCatalogHandler(psSubscriptionCatalogService)
+	log.Println(" ✅ Initialized Playstore Services...")
 
+	log.Println("🔧  Initializing Appstore Services...")
+
+	appStorePublisher := appStoreDistpatch.NewAppStorePublisher(msgPublisher, cfg)
+	appStoreUserService := appStoreUserService.NewAppStoreUserService(userService)
+	appStoreSubscriptionService := appStoreSubscriptionService.NewAppStoreSubscriptionService(db, appStoreUserService, unifiedSubscriptionService)
+	appStoreWebhookService := appStoreWebhookService.NewAppStoreNotificationsService(db, appStorePublisher, appStoreSubscriptionService)
+
+	appStoreWebhookHandler := appStoreWebhookHandler.NewAppStoreNotificationsHandler(appStoreWebhookService)
+
+	appStoreSettingsRepo := appStoreSettingsRepo.NewAppStoreSettingsRepository(db)
+	appStoreSettingsService := appStoreSettingsService.NewAppStoreSettingsService(appStoreSettingsRepo)
+	appStoreSettingsHandler := appStoreSettingsHandler.NewAppStoreSettingsHandler(appStoreSettingsService)
+
+	dashBoardHandler := unifiedSubscriptionHandler.NewDashboardHandler(dashboardSvc)
+
+	log.Println(" ✅ Initialized Appstore Services...")
+
+	log.Println(" 🔌 Initializing Handlers...")
 	deps := &routes.RouteDependencies{
 		PlaystoreRTDNHandler:                psRtdnHandler,
 		PlaystoreSettingsHandler:            psSettingsHandler,
 		PlaystoreApiHandler:                 psApiHandler,
 		PlaystoreSubscriptionCatalogHandler: psSubscriptionCatalogHandler,
+
+		AppStoreWebhookHandler:  appStoreWebhookHandler,
+		AppStoreSettingsHandler: appStoreSettingsHandler,
+		DashboardHandler:        dashBoardHandler,
 	}
 
 	router := routes.SetupRouter(deps)
@@ -144,6 +200,7 @@ func main() {
 		Addr:    fmt.Sprintf(":%s", cfg.ServerPort),
 		Handler: router,
 	}
+	log.Println(" ✅ Initialized Handlers...")
 
 	// ✅ Start HTTP Server (Non-Blocking)
 	wg.Add(1)
@@ -154,6 +211,13 @@ func main() {
 			log.Fatalf("❌ Server error: %v", err)
 		}
 	}()
+
+	// Add this right after starting the server
+	log.Println("✅ Server startup complete - All systems operational")
+	log.Println("====================================================")
+	log.Printf("🔗 HTTP server listening on :%s", cfg.ServerPort)
+	log.Printf("📦 RabbitMQ connected: %s", rmqManager.SanitizeRabbitMQURL())
+	log.Println("====================================================")
 
 	// ✅ Handle OS signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -174,13 +238,6 @@ func main() {
 
 	// ✅ Wait for all goroutines to finish
 	wg.Wait()
-
-	// ✅ Close database
-	database.CloseDatabase(db)
-
-	// ✅ Cleanup RabbitMQ resources
-	log.Println("🚦 Closing RabbitMQ Consumers...")
-	queue.CloseRabbitMQ()
 
 	log.Println("✅ Server shutdown complete")
 }

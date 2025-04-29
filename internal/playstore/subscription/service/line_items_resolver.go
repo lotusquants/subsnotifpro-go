@@ -21,14 +21,19 @@ func (s *playstoreSubscriptionService) ResolveLineItems(
 	changeEventID uuid.UUID,
 	notificationType rtdnDto.SubscriptionNotificationType,
 ) ([]models.SubscriptionLineItem, error) {
+
+	// Validate input
+	if len(subData.LineItems) == 0 {
+		return nil, fmt.Errorf("subscription data contains no line items")
+	}
+
 	var resolvedItems []models.SubscriptionLineItem
 	var lineItemHistories []models.SubscriptionLineItemHistory
 
 	// Create lookup map for existing items (empty for new subscriptions)
 	existingItemsByProduct := make(map[string]*models.SubscriptionLineItem)
 	for i := range subscription.LineItems {
-		item := subscription.LineItems[i]
-		existingItemsByProduct[item.ProductID] = &item
+		existingItemsByProduct[subscription.LineItems[i].ProductID] = &subscription.LineItems[i]
 	}
 
 	// Process all line items from Play Store data

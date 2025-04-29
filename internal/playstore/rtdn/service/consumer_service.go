@@ -24,6 +24,8 @@ func (s *rtdnService) ProcessWebhookEvent(ctx context.Context, payload models.Go
 		err = s.ProcessOneTimeProductEvent(ctx, payload)
 	case payload.Event.VoidedPurchase != nil:
 		err = s.ProcessVoidedPurchaseEvent(ctx, payload)
+	case payload.Event.Test != nil:
+		err = s.ProcessTestPurchaseEvent(ctx, payload)
 	default:
 		log.Println("⚠️ Unrecognized RTDN event type:", payload.ID)
 		return nil
@@ -89,6 +91,14 @@ func (s *rtdnService) ProcessOneTimeProductEvent(ctx context.Context, payload mo
 
 // Process voided purchase events
 func (s *rtdnService) ProcessVoidedPurchaseEvent(ctx context.Context, payload models.GooglePublishPayload) error {
+
+	return nil
+}
+
+// Process voided purchase events
+func (s *rtdnService) ProcessTestPurchaseEvent(ctx context.Context, payload models.GooglePublishPayload) error {
+
+	logger.Log.Infof("✅ Test Purchase processed successfully ")
 
 	return nil
 }

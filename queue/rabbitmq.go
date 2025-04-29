@@ -1,225 +1,262 @@
+// queue/rabbitmq.go
 package queue
 
 import (
 	"context"
 	"fmt"
-	"os"
+	"log"
 	"strings"
-	"subsnotifpro-go/internal/pkg/logger"
 	"sync"
 	"time"
+
+	"subsnotifpro-go/config"
+	"subsnotifpro-go/internal/pkg/logger"
 
 	"github.com/streadway/amqp"
 )
 
-var (
-	conn      *amqp.Connection
-	ch        *amqp.Channel
-	connMutex sync.Mutex
-	closed    chan *amqp.Error
-	retrying  bool
+type RabbitMQManager struct {
+	url         string
+	conn        *amqp.Connection
+	channel     *amqp.Channel
+	mutex       sync.RWMutex
+	notifyClose chan *amqp.Error
+	ctx         context.Context
+	cancel      context.CancelFunc
+	config      config.RabbitMQConfig
+}
+
+// Exchange Types
+const (
+	DirectExchange  = "direct"
+	TopicExchange   = "topic"
+	FanoutExchange  = "fanout"
+	HeadersExchange = "headers"
 )
 
-var (
-	adminMutex  sync.Mutex
-	rabbitmqURL string
-)
+// NewRabbitMQManager creates a new RabbitMQ manager instance
+func NewRabbitMQManager(ctx context.Context, cfg config.RabbitMQConfig) *RabbitMQManager {
+	connString := fmt.Sprintf("amqp://%s:%s@%s:%s/",
+		cfg.Username,
+		cfg.Password,
+		cfg.Host,
+		cfg.Port,
+	)
 
-func init() {
-	rabbitmqURL = getRabbitMQURL()
-	logger.Log.Infof("🚀 RabbitMQ URL: %s", sanitizeRabbitMQURL(rabbitmqURL))
-}
+	ctx, cancel := context.WithCancel(ctx)
 
-// getRabbitMQURL fetches RabbitMQ URL from env, with fallback to default.
-func getRabbitMQURL() string {
-	if url := os.Getenv("RABBITMQ_URL"); url != "" {
-		return url
-	}
-	return "amqp://guest:guest@localhost:5672/" // Fallback
-}
-
-// sanitizeRabbitMQURL removes credentials before logging URL.
-func sanitizeRabbitMQURL(url string) string {
-	parts := strings.Split(url, "@")
-	if len(parts) == 2 {
-		return "amqp://<redacted>@" + parts[1]
-	}
-	return url
-}
-
-func connectRabbitMQ(ctx context.Context) error {
-	connMutex.Lock()
-	defer connMutex.Unlock()
-
-	if retrying {
-		logger.Log.Warn("⚠️ Already reconnecting RabbitMQ, skipping duplicate request...")
-		return nil
+	manager := &RabbitMQManager{
+		url:    connString,
+		ctx:    ctx,
+		cancel: cancel,
+		config: cfg,
 	}
 
-	retrying = true
-	defer func() { retrying = false }()
+	go manager.startConnectionMonitor()
+	return manager
+}
 
-	var err error
-	for i := 1; i <= 5; i++ {
-		if ctx.Err() != nil {
-			logger.Log.Warn("⚠️ Shutdown in progress, stopping RabbitMQ reconnection")
-			return fmt.Errorf("RabbitMQ shutdown in progress")
+func (rm *RabbitMQManager) GetChannel() (*amqp.Channel, error) {
+	rm.mutex.RLock()
+	channel := rm.channel
+	rm.mutex.RUnlock()
+
+	if channel != nil && !isChannelClosed(channel) {
+		return channel, nil
+	}
+
+	return rm.reconnect()
+}
+
+func (rm *RabbitMQManager) reconnect() (*amqp.Channel, error) {
+	rm.mutex.Lock()
+	defer rm.mutex.Unlock()
+
+	// 1. Context check
+	if err := rm.ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context cancelled: %w", err)
+	}
+
+	// 2. Cleanup old connection (with brief timeout)
+	go func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cleanupCancel()
+
+		if rm.channel != nil {
+			select {
+			case <-cleanupCtx.Done():
+				return
+			default:
+				_ = rm.channel.Close()
+			}
 		}
-
-		logger.Log.Infof("🔄 Attempting RabbitMQ connection (attempt %d/5)...", i)
-
-		conn, err = amqp.Dial(rabbitmqURL)
-		if err == nil {
-			logger.Log.Info("✅ RabbitMQ connected successfully.")
-			break
+		if rm.conn != nil {
+			select {
+			case <-cleanupCtx.Done():
+				return
+			default:
+				_ = rm.conn.Close()
+			}
 		}
+	}()
 
-		logger.Log.Warnf("⚠️ RabbitMQ reconnect attempt %d failed: %v", i, err)
-		time.Sleep(2 * time.Second)
-	}
+	// 3. Establish new connection with proper timeout
+	_, dialCancel := context.WithTimeout(rm.ctx, 10*time.Second)
+	defer dialCancel()
 
+	conn, err := amqp.DialConfig(rm.url, amqp.Config{
+		Heartbeat: 10 * time.Second,
+		Locale:    "en_US",
+	})
 	if err != nil {
-		logger.Log.Fatal("❌ RabbitMQ connection failed after retries. Ensure RabbitMQ is running!")
-		return err
+		return nil, fmt.Errorf("connection failed: %w", err)
 	}
 
-	ch, err = conn.Channel()
+	// 4. Create channel
+	channel, err := conn.Channel()
 	if err != nil {
-		logger.Log.Fatal("❌ Failed to open RabbitMQ channel:", err)
-		return err
+		_ = conn.Close()
+		return nil, fmt.Errorf("channel creation failed: %w", err)
 	}
 
-	logger.Log.Info("✅ RabbitMQ channel opened successfully.")
+	// 5. Configure channel quality of service
+	if err := channel.Qos(
+		1,     // prefetch count
+		0,     // prefetch size
+		false, // global
+	); err != nil {
+		_ = channel.Close()
+		_ = conn.Close()
+		return nil, fmt.Errorf("QoS setup failed: %w", err)
+	}
 
-	closed = make(chan *amqp.Error, 1)
-	ch.NotifyClose(closed)
+	// 6. Update instance state and setup close notification
+	rm.conn = conn
+	rm.channel = channel
+	rm.notifyClose = make(chan *amqp.Error, 1)
+	rm.channel.NotifyClose(rm.notifyClose)
 
-	go monitorConnectionClosure(ctx)
-
-	return nil
+	return channel, nil
 }
 
-// monitorConnectionClosure listens for RabbitMQ connection closure.
-func monitorConnectionClosure(ctx context.Context) {
-	select {
-	case err := <-closed:
-		if err != nil {
-			logger.Log.Warn("⚠️ RabbitMQ connection lost! Reconnecting...")
-			connectRabbitMQ(ctx)
-		}
-	case <-ctx.Done():
-		logger.Log.Warn("🚦 Shutdown detected, stopping reconnection monitoring")
-	}
-}
-
-// GetChannel ensures RabbitMQ connection is healthy and reconnects if needed.
-func GetChannel(ctx context.Context) (*amqp.Channel, error) {
-	connMutex.Lock()
-
-	if conn == nil || ch == nil {
-		logger.Log.Warn("⚠️ RabbitMQ connection lost! Reconnecting...")
-		connMutex.Unlock()
-		if err := connectRabbitMQ(ctx); err != nil {
-			return nil, err
-		}
-		connMutex.Lock()
-	}
-
-	notifyChan := make(chan *amqp.Error, 1)
-	ch.NotifyClose(notifyChan)
-
-	select {
-	case err := <-notifyChan:
-		logger.Log.Warnf("⚠️ RabbitMQ channel closed unexpectedly. Reconnecting...: %v", err)
-		connMutex.Unlock()
-		if err := connectRabbitMQ(ctx); err != nil {
-			return nil, err
-		}
-		connMutex.Lock()
-	default:
-		// Channel is healthy.
-	}
-
-	defer connMutex.Unlock()
-	return ch, nil
-}
-
-// CloseRabbitMQ closes RabbitMQ connection and channel safely.
-func CloseRabbitMQ() {
-	connMutex.Lock()
-	defer connMutex.Unlock()
-
-	if ch != nil {
-		logger.Log.Warn("🚦 Closing RabbitMQ channel...")
-		if err := ch.Close(); err != nil && !strings.Contains(err.Error(), "channel/connection is not open") {
-			logger.Log.Warnf("⚠️ Error closing RabbitMQ channel: %v", err)
-		}
-		ch = nil
-	}
-
-	if conn != nil {
-		logger.Log.Warn("🚦 Closing RabbitMQ connection...")
-		if err := conn.Close(); err != nil && !strings.Contains(err.Error(), "channel/connection is not open") {
-			logger.Log.Warnf("⚠️ Error closing RabbitMQ connection: %v", err)
-		}
-		conn = nil
-	}
-
-	select {
-	case <-closed:
-	default:
-		close(closed)
-	}
-
-	logger.Log.Warn("✅ RabbitMQ connection fully closed.")
-}
-
-// MonitorRabbitMQConnection periodically checks RabbitMQ health and triggers reconnect if needed.
-func MonitorRabbitMQConnection(ctx context.Context) {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
+func (rm *RabbitMQManager) startConnectionMonitor() {
 	for {
 		select {
-		case <-ctx.Done():
-			logger.Log.Warn("🚦 Stopping RabbitMQ connection monitoring...")
+		case <-rm.ctx.Done():
+			rm.Close()
 			return
-		case <-ticker.C:
-			connMutex.Lock()
-			needReconnect := (conn == nil || ch == nil) && !retrying
-			connMutex.Unlock()
-
-			if needReconnect {
-				logger.Log.Warn("⚠️ RabbitMQ connection lost! Triggering reconnect...")
-				go func() {
-					if err := connectRabbitMQ(ctx); err != nil {
-						logger.Log.Warnf("❌ Failed to reconnect RabbitMQ: %v", err)
-					}
-				}()
+		case err := <-rm.notifyClose:
+			if err != nil {
+				logger.Log.Warnf("RabbitMQ connection closed: %v", err)
+				if _, reconnectErr := rm.reconnect(); reconnectErr != nil {
+					logger.Log.Errorf("Failed to reconnect: %v", reconnectErr)
+				}
 			}
 		}
 	}
 }
 
-// GetAdminChannel provides a short-lived connection and channel for admin tasks like inspecting the DLQ.
-func GetAdminChannel() (*amqp.Connection, *amqp.Channel, error) {
-	adminMutex.Lock()
-	defer adminMutex.Unlock()
+func (rm *RabbitMQManager) Close() {
+	rm.mutex.Lock()
+	defer rm.mutex.Unlock()
 
-	conn, err := amqp.Dial(rabbitmqURL)
-	if err != nil {
-		logger.Log.Errorf("❌ Failed to create admin RabbitMQ connection: %v", err)
-		return nil, nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
+	// Early return if already closed
+	if rm.conn == nil && rm.channel == nil {
+		return
 	}
 
-	ch, err := conn.Channel()
-	if err != nil {
-		conn.Close()
-		logger.Log.Warn("⚠️ Closed admin connection after failing to create channel.")
-		logger.Log.Errorf("❌ Failed to create admin RabbitMQ channel: %v", err)
-		return nil, nil, fmt.Errorf("failed to open RabbitMQ channel: %w", err)
+	// Cancel the context first to stop any reconnection attempts
+	if rm.cancel != nil {
+		rm.cancel()
 	}
 
-	logger.Log.Debug("✅ Created short-lived RabbitMQ admin connection and channel")
-	return conn, ch, nil
+	// Close resources with proper error handling and timeouts
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Close channel
+	go func() {
+		defer wg.Done()
+		if rm.channel != nil {
+			err := rm.channel.Close()
+			if err != nil {
+				if err == amqp.ErrClosed {
+					log.Println("ℹ️ RabbitMQ channel already closed")
+				} else {
+					log.Printf("⚠️ Error closing channel: %v", err)
+				}
+			} else {
+				log.Println("✅ RabbitMQ channel closed")
+			}
+			rm.channel = nil
+		}
+	}()
+
+	// Close connection
+	go func() {
+		defer wg.Done()
+		if rm.conn != nil {
+			err := rm.conn.Close()
+			if err != nil {
+				if err == amqp.ErrClosed {
+					log.Println("ℹ️ RabbitMQ connection already closed")
+				} else {
+					log.Printf("⚠️ Error closing connection: %v", err)
+				}
+			} else {
+				log.Println("✅ RabbitMQ connection closed")
+			}
+			rm.conn = nil
+		}
+	}()
+
+	// Wait for shutdown with timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Println("🚦 RabbitMQ shutdown completed successfully")
+	case <-time.After(5 * time.Second):
+		log.Println("⚠️ Timeout waiting for RabbitMQ shutdown")
+	}
+}
+
+func isChannelClosed(ch *amqp.Channel) bool {
+	if ch == nil {
+		return true
+	}
+
+	select {
+	case _, ok := <-ch.NotifyClose(make(chan *amqp.Error, 1)):
+		return !ok
+	default:
+		return false
+	}
+}
+
+// SanitizeRabbitMQURL returns a redacted connection string for logging purposes
+func (rm *RabbitMQManager) SanitizeRabbitMQURL() string {
+	if rm == nil {
+		return "<rabbitmq-not-configured>"
+	}
+
+	// Construct the URL from config
+	url := fmt.Sprintf("amqp://%s:%s@%s:%s/%s",
+		rm.config.Username,
+		rm.config.Password,
+		rm.config.Host,
+		rm.config.Port,
+		strings.TrimPrefix(rm.config.VHost, "/"),
+	)
+
+	// Redact credentials
+	parts := strings.Split(url, "@")
+	if len(parts) == 2 {
+		return "amqp://<redacted>@" + parts[1]
+	}
+	return url
 }

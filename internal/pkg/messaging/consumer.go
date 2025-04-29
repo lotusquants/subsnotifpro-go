@@ -14,18 +14,22 @@ import (
 
 // Consumer defines a generic AMQP message consumer.
 type Consumer struct {
-	ch          *amqp.Channel
-	queueName   string
-	dlqName     string
-	maxRetries  int
-	workerCount int
-	handler     func(ctx context.Context, payload []byte) error
-	publisher   MessagePublisher
+	ch           *amqp.Channel
+	exchangeName string
+	routingKey   string
+	queueName    string
+	dlqName      string
+	maxRetries   int
+	workerCount  int
+	handler      func(ctx context.Context, payload []byte) error
+	publisher    MessagePublisher
 }
 
 // NewConsumer creates a new Consumer instance.
 func NewConsumer(
 	ch *amqp.Channel,
+	exchangeName string,
+	routingKey string,
 	queueName string,
 	dlqName string,
 	maxRetries int,
@@ -34,13 +38,15 @@ func NewConsumer(
 	publisher MessagePublisher,
 ) *Consumer {
 	return &Consumer{
-		ch:          ch,
-		queueName:   queueName,
-		dlqName:     dlqName,
-		maxRetries:  maxRetries,
-		workerCount: workerCount,
-		handler:     handler,
-		publisher:   publisher,
+		ch:           ch,
+		exchangeName: exchangeName,
+		routingKey:   routingKey,
+		queueName:    queueName,
+		dlqName:      dlqName,
+		maxRetries:   maxRetries,
+		workerCount:  workerCount,
+		handler:      handler,
+		publisher:    publisher,
 	}
 }
 
@@ -133,7 +139,8 @@ func (c *Consumer) requeueWithDelay(msg amqp.Delivery, retryCount int) {
 	// Publish new message FIRST
 	err := c.publisher.PublishWithDelay(
 		context.Background(),
-		c.queueName,
+		c.exchangeName,
+		c.routingKey,
 		amqp.Publishing{
 			ContentType: "application/json",
 			Body:        msg.Body,

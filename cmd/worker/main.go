@@ -5,8 +5,11 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
+	"time"
 
+	"subsnotifpro-go/config"
 	"subsnotifpro-go/database"
 	messaging "subsnotifpro-go/internal/pkg/messaging"
 	playstoreApiService "subsnotifpro-go/internal/playstore/api/service"
@@ -28,45 +31,77 @@ import (
 
 	rtdnRepo "subsnotifpro-go/internal/playstore/rtdn/repository"
 	rtdnService "subsnotifpro-go/internal/playstore/rtdn/service"
+
+	appStoreDistpatch "subsnotifpro-go/internal/appstore/dispatch"
+	appStoreSubscriptionService "subsnotifpro-go/internal/appstore/subscription/service"
+	appStoreUserService "subsnotifpro-go/internal/appstore/user/service"
+	appStoreWebhookRepo "subsnotifpro-go/internal/appstore/webhooks/repository"
+	appStoreWebhookService "subsnotifpro-go/internal/appstore/webhooks/service"
+	unifiedSubscriptionsConsumer "subsnotifpro-go/internal/subscription/consumer"
+	unifiedPublisher "subsnotifpro-go/internal/subscription/publisher"
+	unifiedSubscriptionRepo "subsnotifpro-go/internal/subscription/repository"
+	unifiedSubscriptionService "subsnotifpro-go/internal/subscription/service"
+
 	"subsnotifpro-go/queue"
 )
 
 func main() {
-	// ✅ Create shutdown context
+	// Create shutdown context with cancel
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// // Initialize logger with options
-	// logger := logger.New(
-	// 	logger.WithLevel(logger.DebugLevel),
-	// 	logger.WithCaller(true),
-	// )
+	// Setup wait group for graceful shutdown
+	var wg sync.WaitGroup
 
-	// ✅ Initialize RabbitMQ channel
-	ch, err := queue.GetChannel(ctx)
+	// ✅ Load configuration
+	cfg := config.LoadConfig()
+
+	// Initialize RabbitgeMQ connection manager
+	rmqManager := queue.NewRabbitMQManager(ctx, cfg.RabbitMQ)
+	defer func() {
+		log.Println("🚦 Closing RabbitMQ connection...")
+		rmqManager.Close()
+	}()
+
+	// Get RabbitMQ channel
+	ch, err := rmqManager.GetChannel()
 	if err != nil {
-		log.Fatal("❌ Failed to connect to RabbitMQ:", err)
-		return
+		log.Fatalf("❌ Failed to get RabbitMQ channel: %v", err)
 	}
-	defer queue.CloseRabbitMQ() // Ensure RabbitMQ is closed when done
 
-	// ✅ Initialize database and pass to repositories
+	// Initialize database
 	db, err := database.ConnectDatabase()
 	if err != nil {
 		log.Fatalf("❌ Database connection failed: %v", err)
 	}
-	defer database.CloseDatabase(db)
+	defer func() {
+		log.Println("🚦 Closing database connection...")
+		database.CloseDatabase(db)
+	}()
 
-	// Create generic publisher
+	// Initialize services
 	msgPublisher := messaging.NewRabbitMQPublisher(messaging.PublisherOptions{
 		Channel: ch,
-		// Metrics: metrics.NewPublisherMetrics(),
 	})
 
-	// Create domain-specific publishers
-	googlePlayPublisher := playstoreDispatchPkg.NewGooglePlayPublisher(msgPublisher)
+	googlePlayPublisher := playstoreDispatchPkg.NewGooglePlayPublisher(msgPublisher, cfg)
 
-	// ✅ Initialize the repositories and services
+	// 2. Create unified event publisher
+	unifiedPublisher := unifiedPublisher.NewUnifiedEventPublisher(unifiedPublisher.UnifiedPublisherOpts{
+		Publisher:  msgPublisher,
+		Exchange:   cfg.RabbitMQ.UnifiedSubs.Exchange,
+		RoutingKey: cfg.RabbitMQ.UnifiedSubs.RoutingKey,
+		MaxRetries: cfg.RabbitMQ.MaxRetries,
+		RetryDelay: cfg.RabbitMQ.RetryDelay,
+	})
+
+	dashboardRepo := unifiedSubscriptionRepo.NewDashboardRepository(db)
+	dashboardSvc := unifiedSubscriptionService.NewDashboardService(dashboardRepo, 15*time.Minute)
+
+	unifiedSubscriptionRepo := unifiedSubscriptionRepo.NewSubscriptionRepository(db)
+
+	unifiedSubscriptionService := unifiedSubscriptionService.NewUnifiedSubscriptionService(db, unifiedPublisher, dashboardSvc, unifiedSubscriptionRepo)
+
 	clientService := clientService.NewPlaystoreClientService()
 	apiService := playstoreApiService.NewPlaystoreApiService(clientService)
 	settingsRepo := playstoreSettingRepo.NewPlaystoreSettingsRepository(db)
@@ -79,29 +114,90 @@ func main() {
 	psCatalogRepo := playstoreCatalogRepo.NewSubscriptionCatalogRepository(db, 50)
 	psCatalogService := playstoreCatalogService.NewSubscriptionCatalogService(ctx, psCatalogRepo, apiService)
 	subscriptionRepo := playstoreSubscriptionRepository.NewPlaystoreSubscriptionRepository()
-	subscriptionService := playstoreSubscriptionService.NewPlaystoreSubscriptionService(db, subscriptionRepo, psUserService, apiService, psCatalogService)
+	subscriptionService := playstoreSubscriptionService.NewPlaystoreSubscriptionService(db, subscriptionRepo, psUserService, apiService, psCatalogService, unifiedSubscriptionService)
 	rtdnRepo := rtdnRepo.NewRTDNRepository(db)
-	rtdnService := rtdnService.NewRTDNService(ctx, rtdnRepo, apiService, subscriptionService, db, googlePlayPublisher)
+	rtdnService := rtdnService.NewRTDNService(ctx, rtdnRepo, apiService, subscriptionService, db, googlePlayPublisher, rmqManager, &cfg.RabbitMQ)
 
-	// ✅ Create and start the consumer
+	log.Println("🔧  Initializing Appstore Services...")
 
-	consumer := playstoreDispatchPkg.NewGooglePlayConsumer(ch, rtdnRepo, rtdnService, msgPublisher)
-	go consumer.Consumer.Start(ctx)
+	appStorePublisher := appStoreDistpatch.NewAppStorePublisher(msgPublisher, cfg)
+	appStoreWebhookRepository := appStoreWebhookRepo.NewAppstoreNotificationsRepository(db)
+	appStoreUserService := appStoreUserService.NewAppStoreUserService(userService)
+	appStoreSubscriptionService := appStoreSubscriptionService.NewAppStoreSubscriptionService(db, appStoreUserService, unifiedSubscriptionService)
+	appStoreWebhookService := appStoreWebhookService.NewAppStoreNotificationsService(db, appStorePublisher, appStoreSubscriptionService)
 
-	// consumer := dispatch.NewConsumer(ch, rtdnRepo, rtdnService)
-	// go consumer.Start(ctx)
-	// go dispatch.StartDLQConsumer(ctx, ch)
+	log.Println(" ✅ Initialized Appstore Services...")
 
-	// ✅ Handle OS signals for graceful shutdown
+	// Create and start the consumers
+	consumer := playstoreDispatchPkg.NewGooglePlayConsumer(ch, rtdnRepo, rtdnService, msgPublisher, cfg)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		consumer.Consumer.Start(ctx)
+	}()
+
+	log.Println("🚀 Playstore Consumer/Worker started successfully")
+
+	// Create and start the consumer
+	appStoreConsumer := appStoreDistpatch.NewAppStoreConsumer(ch, appStoreWebhookRepository, appStoreWebhookService, msgPublisher, cfg)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		appStoreConsumer.Consumer.Start(ctx)
+	}()
+
+	log.Println("🚀 Appstore Consumer/Worker started successfully")
+
+	// Configure consumer options
+	unifiedSubscriptionsConsumerOpts := unifiedSubscriptionsConsumer.UnifiedConsumerOpts{
+		Channel:   ch,
+		Repo:      unifiedSubscriptionRepo,
+		Service:   unifiedSubscriptionService,
+		Publisher: msgPublisher,
+		Cfg:       &cfg.RabbitMQ, // your RabbitMQ config
+	}
+
+	// Create and start the consumer
+	unifiedSubscriptionConsumer := unifiedSubscriptionsConsumer.NewUnifiedConsumer(unifiedSubscriptionsConsumerOpts)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		unifiedSubscriptionConsumer.Start(ctx)
+	}()
+
+	log.Println("🚀 Appstore Consumer/Worker started successfully")
+
+	// Handle OS signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	<-sigChan // Wait for termination signal
-	log.Println("🚦 Shutting down...")
+	// Wait for termination signal
+	sig := <-sigChan
+	log.Printf("🚦 Received shutdown signal: %v", sig)
 
-	// ✅ Cancel background workers
+	// Initiate graceful shutdown
 	cancel()
 
-	// ✅ Wait for all goroutines to finish (you could use a WaitGroup here if needed)
-	log.Println("✅ Consumer service shutdown complete")
+	// Setup shutdown timeout
+	shutdownTimeout := 15 * time.Second
+	shutdownDone := make(chan struct{})
+
+	// Wait for goroutines to finish in background
+	go func() {
+		wg.Wait()
+		close(shutdownDone)
+	}()
+
+	// Wait for shutdown or timeout
+	select {
+	case <-shutdownDone:
+		log.Println("✅ All components shut down gracefully")
+	case <-time.After(shutdownTimeout):
+		log.Println("⚠️ Shutdown timeout reached, forcing exit")
+	}
+
+	log.Println("👋 Worker shutdown complete")
 }

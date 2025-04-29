@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,7 +40,14 @@ type GooglePlayWebhookEvent struct {
 // Init ensures required fields are set
 func (e *GooglePlayWebhookEvent) Init() {
 	if e.ID == uuid.Nil {
-		e.ID = uuid.New()
+
+		// Generate UUIDv7
+		uuidV7, err := uuid.NewV7()
+		if err != nil {
+			log.Println("failed to generate UUIDv7: %w", err)
+			return
+		}
+		e.ID = uuidV7
 	}
 	if e.ReceivedAt.IsZero() {
 		e.ReceivedAt = time.Now().UTC()

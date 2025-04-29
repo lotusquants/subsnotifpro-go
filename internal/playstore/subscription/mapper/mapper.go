@@ -35,17 +35,17 @@ func BuildGoogleAccountModel(subData *dto.SubscriptionPurchaseV2) *playstoreMode
 		subscribeInfo = subData.SubscribeWithGoogleInfo
 	}
 
-	if external == nil {
-		return nil // Cannot continue without obfuscatedExternalAccountId
+	if external == nil || external.ObfuscatedExternalAccountID == nil {
+		return nil
 	}
 
 	account := &playstoreModels.GoogleAccount{
+		ID:                          uuid.New(),
 		ObfuscatedExternalAccountID: *external.ObfuscatedExternalAccountID,
 		ExternalAccountID:           external.ExternalAccountID,
 		ObfuscatedExternalProfileID: external.ObfuscatedExternalAccountID,
 	}
 
-	// Add optional fields from SubscribeWithGoogleInfo if present
 	if subscribeInfo != nil {
 		account.ProfileID = subscribeInfo.ProfileID
 		account.ProfileName = subscribeInfo.ProfileName

@@ -23,6 +23,9 @@ import (
 	"subsnotifpro-go/internal/playstore/subscription/models"
 	"subsnotifpro-go/internal/playstore/subscription/repository"
 	playstoreUserService "subsnotifpro-go/internal/playstore/user/service"
+	userModels "subsnotifpro-go/internal/users/models"
+
+	unifiedSubscriptionService "subsnotifpro-go/internal/subscription/service"
 )
 
 type PlaystoreSubscriptionService interface {
@@ -30,11 +33,12 @@ type PlaystoreSubscriptionService interface {
 }
 
 type playstoreSubscriptionService struct {
-	db                      *gorm.DB
-	repo                    repository.PlaystoreSubscriptionRepository
-	playstoreUserService    playstoreUserService.PlaystoreUserService
-	playstoreApiService     playstoreApiService.PlaystoreApiService
-	playstoreCatalogService playstoreCatalogService.SubscriptionCatalogService
+	db                         *gorm.DB
+	repo                       repository.PlaystoreSubscriptionRepository
+	playstoreUserService       playstoreUserService.PlaystoreUserService
+	playstoreApiService        playstoreApiService.PlaystoreApiService
+	playstoreCatalogService    playstoreCatalogService.SubscriptionCatalogService
+	unifiedSubscriptionService unifiedSubscriptionService.UnifiedSubscriptionService
 }
 
 func NewPlaystoreSubscriptionService(
@@ -43,14 +47,16 @@ func NewPlaystoreSubscriptionService(
 	playstoreUserService playstoreUserService.PlaystoreUserService,
 	playstoreApiService playstoreApiService.PlaystoreApiService,
 	playstoreCatalogService playstoreCatalogService.SubscriptionCatalogService,
+	unifiedSubscriptionService unifiedSubscriptionService.UnifiedSubscriptionService,
 
 ) PlaystoreSubscriptionService {
 	return &playstoreSubscriptionService{
-		db:                      db,
-		repo:                    repo,
-		playstoreUserService:    playstoreUserService,
-		playstoreApiService:     playstoreApiService,
-		playstoreCatalogService: playstoreCatalogService,
+		db:                         db,
+		repo:                       repo,
+		playstoreUserService:       playstoreUserService,
+		playstoreApiService:        playstoreApiService,
+		playstoreCatalogService:    playstoreCatalogService,
+		unifiedSubscriptionService: unifiedSubscriptionService,
 	}
 }
 
@@ -105,10 +111,60 @@ func (s *playstoreSubscriptionService) UpsertSubscription(
 	// 5️⃣ Branch based on whether subscription exists
 	if existing == nil {
 		// 🆕 CREATE NEW SUBSCRIPTION PATH
-		return s.createNewSubscription(ctx, tx, appUserID, packageName, purchaseToken, subData, subscriptionProductId, notificationType, event.ID)
+
+		newSub, err := s.createNewSubscription(ctx, tx, appUserID, packageName, purchaseToken, subData, subscriptionProductId, notificationType, event.ID)
+		if err != nil {
+			return fmt.Errorf("failed to create new subscription: %w", err)
+		}
+
+		if newSub.User == nil {
+			return fmt.Errorf("user not found for subscription")
+		}
+		if newSub.User.GoogleAccount == nil {
+			return fmt.Errorf("google account not found for subscription")
+		}
+		if newSub.User.GoogleAccount.ObfuscatedExternalAccountID == "" {
+			return fmt.Errorf("obfuscated external account ID not found for subscription")
+		}
+
+		logger.Log.WithFields(map[string]interface{}{
+			"subscription_id": newSub.ID,
+			"user_id":         newSub.UserID,
+			"package_name":    newSub.PackageName,
+			"purchase_token":  newSub.PurchaseToken,
+			"status":          newSub.SubscriptionState,
+			"user_details": map[string]interface{}{
+				"user_id": newSub.UserID,
+				"google_account": map[string]interface{}{
+					"obfuscated_id": newSub.User.GoogleAccount.ObfuscatedExternalAccountID},
+			},
+		}).Info("Processed the new PlayStore subscription and delegating to unified subscription module")
+
+		// Pass raw AppStore data to unified service
+		notificationTypeStr := notificationType.String()
+		if err := s.unifiedSubscriptionService.CreateUnifiedSubscriptionFromPlayStore(ctx, newSub, &notificationTypeStr); err != nil {
+			logger.Log.WithError(err).Error("Failed to create unified subscription")
+			return fmt.Errorf("failed to process unified event: %w", err)
+		}
+
+		return nil
+
 	} else {
 		// 🔁 UPDATE EXISTING SUBSCRIPTION PATH
-		return s.updateExistingSubscription(ctx, tx, existing, subData, notificationType, event.ID)
+		subscription, err := s.updateExistingSubscription(ctx, tx, existing, subData, notificationType, event.ID)
+		if err != nil {
+			return fmt.Errorf("failed to update existing subscription: %w", err)
+		}
+
+		logger.Log.Info("Processed the existing appstore subscription and delegating to unified subscription module", existing)
+
+		// Pass raw AppStore data to unified service
+		notificationTypeStr := notificationType.String()
+		if err := s.unifiedSubscriptionService.CreateUnifiedSubscriptionFromPlayStore(ctx, subscription, &notificationTypeStr); err != nil {
+			return fmt.Errorf("failed to process unified event: %w", err)
+		}
+
+		return nil
 	}
 
 }
@@ -123,16 +179,22 @@ func (s *playstoreSubscriptionService) createNewSubscription(
 	subscriptionProductId string,
 	notificationType rtdnDto.SubscriptionNotificationType,
 	changeEventID uuid.UUID,
-) error {
+) (*models.SubscriptionPurchaseV2, error) {
 	// 1. Validate essential fields first
 	if err := validateSubscriptionData(subData); err != nil {
-		return fmt.Errorf("invalid subscription data: %w", err)
+		return nil, fmt.Errorf("invalid subscription data: %w", err)
 	}
 
 	startTime := subData.StartTime
 
 	newSubscriptionState := models.SubscriptionState(subData.SubscriptionState)
 	newAckState := models.AcknowledgementState(subData.AcknowledgementState)
+
+	// 1. First verify user exists
+	var user userModels.AppUser
+	if err := tx.Preload("GoogleAccount").First(&user, appUserID).Error; err != nil {
+		return nil, fmt.Errorf("user verification failed: %w", err)
+	}
 
 	// 3. Create minimal subscription record
 	subscriptionID := uuid.New()
@@ -148,8 +210,11 @@ func (s *playstoreSubscriptionService) createNewSubscription(
 		RegionCode:           subData.RegionCode,
 	}
 
+	// 3. Set the preloaded user relationship
+	newSub.User = &user
+
 	if err := s.repo.InsertSubscription(ctx, tx, &newSub); err != nil {
-		return fmt.Errorf("failed to insert base subscription: %w", err)
+		return nil, fmt.Errorf("failed to insert base subscription: %w", err)
 	}
 
 	// 4. Create change event
@@ -159,7 +224,7 @@ func (s *playstoreSubscriptionService) createNewSubscription(
 		EventType:      notificationType.String(),
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create change event: %w", err)
+		return nil, fmt.Errorf("failed to create change event: %w", err)
 	}
 
 	// 5. Record initial state transitions
@@ -167,7 +232,7 @@ func (s *playstoreSubscriptionService) createNewSubscription(
 		ctx, tx, subscriptionID, newSubscriptionState, newAckState,
 		changeEventID, packageName, subscriptionProductId, purchaseToken,
 	); err != nil {
-		return err
+		return nil, err
 	}
 
 	// 6. Process linked purchase token if exists
@@ -177,33 +242,37 @@ func (s *playstoreSubscriptionService) createNewSubscription(
 			ctx, tx, subData, subscriptionID, purchaseToken,
 			changeEventID, updateFields,
 		); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	// 7. Handle line items
-	if _, err := s.ResolveLineItems(
+	lineItems, err := s.ResolveLineItems(
 		ctx, tx, &newSub, subData, changeEventID, notificationType,
-	); err != nil {
-		return fmt.Errorf("failed to resolve line items: %w", err)
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve line items: %w", err)
 	}
+
+	// Assign the line items to the subscription
+	newSub.LineItems = lineItems
 
 	// 8. Acknowledge with Play Store and update state
 	if err := s.processAcknowledgement(
 		ctx, tx, subscriptionID, newAckState, changeEventID,
 		packageName, subscriptionProductId, purchaseToken, updateFields,
 	); err != nil {
-		return err
+		return nil, err
 	}
 
 	// 9. Final update if any fields need updating
 	if len(updateFields) > 0 {
 		if err := s.repo.UpdateSubscriptionFields(ctx, tx, subscriptionID, updateFields); err != nil {
-			return fmt.Errorf("failed to update subscription relations: %w", err)
+			return nil, fmt.Errorf("failed to update subscription relations: %w", err)
 		}
 	}
 
-	return nil
+	return &newSub, nil
 }
 
 // Helper functions for better organization:
@@ -298,7 +367,7 @@ func (s *playstoreSubscriptionService) updateExistingSubscription(
 	subData *apiDto.SubscriptionPurchaseV2,
 	notificationType rtdnDto.SubscriptionNotificationType,
 	changeEventID uuid.UUID,
-) error {
+) (*models.SubscriptionPurchaseV2, error) {
 	// // 1. Create change event first
 	err := s.repo.CreateSubscriptionEvent(ctx, tx, &models.SubscriptionEvent{
 		SubscriptionID: existing.ID,
@@ -306,7 +375,7 @@ func (s *playstoreSubscriptionService) updateExistingSubscription(
 		EventType:      notificationType.String(),
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create change event: %w", err)
+		return nil, fmt.Errorf("failed to create change event: %w", err)
 	}
 
 	// 3. Resolve all dependent models
@@ -319,38 +388,38 @@ func (s *playstoreSubscriptionService) updateExistingSubscription(
 	if err := s.processStateTransitions(
 		ctx, tx, existing, subData, changeEventID, updateFields,
 	); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Handle context updates
 	if err := s.processContextUpdates(
 		ctx, tx, existing, subData, changeEventID, notificationType, updateFields,
 	); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Handle linked purchase token
 	if err := s.processLinkedPurchaseTokenUpdate(
 		ctx, tx, existing, subData, changeEventID, updateFields,
 	); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Handle line items
 	if _, err := s.ResolveLineItems(
 		ctx, tx, existing, subData, changeEventID, notificationType,
 	); err != nil {
-		return fmt.Errorf("failed to resolve line items: %w", err)
+		return nil, fmt.Errorf("failed to resolve line items: %w", err)
 	}
 
 	// 4. Perform final update if needed
 	if len(updateFields) > 0 {
 		if err := s.repo.UpdateSubscriptionFields(ctx, tx, existing.ID, updateFields); err != nil {
-			return fmt.Errorf("failed to update subscription: %w", err)
+			return nil, fmt.Errorf("failed to update subscription: %w", err)
 		}
 	}
 
-	return nil
+	return existing, nil
 }
 
 // Helper functions:

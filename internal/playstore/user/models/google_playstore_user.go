@@ -1,10 +1,14 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type GoogleAccount struct {
-	ID        string `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	AppUserID string `gorm:"type:uuid;not null;index;constraint:OnDelete:CASCADE"`
+	ID        uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	AppUserID string    `gorm:"type:uuid;not null;index;constraint:OnDelete:CASCADE"`
 
 	// Required identifier
 	ObfuscatedExternalAccountID string `gorm:"type:varchar(100);not null;uniqueIndex"` // Core lookup field

@@ -2,8 +2,6 @@ package routes
 
 import (
 	"github.com/gin-gonic/gin"
-
-	playstoreRTDNHandler "subsnotifpro-go/internal/playstore/rtdn/handler"
 )
 
 func registerGooglePlayRoutes(router *gin.Engine, deps *RouteDependencies) {
@@ -13,8 +11,8 @@ func registerGooglePlayRoutes(router *gin.Engine, deps *RouteDependencies) {
 	group.POST("/rtdn/webhooks", func(c *gin.Context) {
 		deps.PlaystoreRTDNHandler.WebhookHandler(c)
 	})
-	group.GET("/rtdn/dlq/size", playstoreRTDNHandler.GetDLQSize)
-	group.POST("/rtdn/dlq/retry", playstoreRTDNHandler.RetryDLQHandler)
+	group.GET("/rtdn/dlq/size", deps.PlaystoreRTDNHandler.GetDLQSize)
+	group.POST("/rtdn/dlq/retry", deps.PlaystoreRTDNHandler.RetryDLQHandler)
 
 	// 🟢 Playstore Settings
 	group.POST("/save-settings", deps.PlaystoreSettingsHandler.SaveSettingsHandler)

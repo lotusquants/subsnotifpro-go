@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"subsnotifpro-go/internal/constants"
+	"subsnotifpro-go/config"
 	"subsnotifpro-go/internal/pkg/contextutil"
 	"subsnotifpro-go/internal/pkg/logger"
 	messaging "subsnotifpro-go/internal/pkg/messaging"
@@ -28,21 +28,24 @@ func NewGooglePlayConsumer(
 	repo repository.RTDNRepository,
 	svc service.RTDNService,
 	publisher messaging.MessagePublisher,
+	cfg *config.Config,
 ) *GooglePlayConsumer {
 	return &GooglePlayConsumer{
 		Consumer: messaging.NewConsumer(
 			ch,
-			constants.RTDNQueue,
-			constants.RTDNDLQ,
-			constants.MaxRetries,
-			constants.WorkerCount,
+			cfg.RabbitMQ.RTDN.Exchange,
+			cfg.RabbitMQ.RTDN.RoutingKey,
+			cfg.RabbitMQ.RTDN.Queue,
+			cfg.RabbitMQ.RTDN.DLQ,
+			cfg.RabbitMQ.MaxRetries,
+			cfg.RabbitMQ.WorkerCount,
 			func(ctx context.Context, payload []byte) error {
 				// Extract delivery from context
 				msg, ok := contextutil.DeliveryFromContext(ctx)
 				if !ok {
 					return fmt.Errorf("missing message delivery in context")
 				}
-				return processMessage(ctx, payload, msg, repo, svc)
+				return processPlayStoreMessage(ctx, payload, msg, repo, svc)
 			},
 			publisher,
 		),
@@ -51,14 +54,18 @@ func NewGooglePlayConsumer(
 	}
 }
 
-// processMessage handles domain logic WITH transaction-safe acknowledgment
-func processMessage(
+// processPlayStoreMessage handles domain logic WITH transaction-safe acknowledgment
+func processPlayStoreMessage(
 	ctx context.Context,
 	payload []byte,
 	msg *amqp.Delivery,
 	repo repository.RTDNRepository,
 	svc service.RTDNService,
 ) error {
+
+	logger.Log.Infof("--------------------------------------------------------------------------")
+	logger.Log.Infof("🔹 Consume new Google Play RTDN event start")
+	logger.Log.Infof("--------------------------------------------------------------------------")
 	var publishPayLoad models.GooglePublishPayload
 	if err := json.Unmarshal(payload, &publishPayLoad); err != nil {
 		logger.Log.Warnf("❌ Failed to decode event: %v", err)

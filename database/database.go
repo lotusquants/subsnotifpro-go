@@ -33,6 +33,7 @@ func ConnectDatabase() (*gorm.DB, error) {
 
 	if queryLogging == "true" {
 		gormLogger = logger.Default.LogMode(logger.Info) // Log all queries
+		// gormLogger = logger.Default.LogMode(logger.Silent)
 	} else {
 		gormLogger = logger.Default.LogMode(logger.Silent) // Disable query logging
 	}

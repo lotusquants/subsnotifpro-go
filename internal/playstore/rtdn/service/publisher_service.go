@@ -19,32 +19,51 @@ func (s *rtdnService) ProcessWebhookEventForPublish(ctx context.Context, dtoEven
 		return fmt.Errorf("conversion failed: %w", err)
 	}
 
-	// Process within transaction
+	var payload *models.GooglePublishPayload
+
+	// 1. Do all database work in transaction
 	err := s.repo.WithTransaction(ctx, func(txCtx context.Context) error {
-		// 1. Save event
+		// Save event
 		if err := s.repo.Create(txCtx, domainEvent); err != nil {
 			return fmt.Errorf("save event failed: %w", err)
 		}
 
-		// 2. Fetch additional data
-		payload, err := s.fetchAPIData(txCtx, domainEvent)
+		// Fetch additional data (if needed for DB operations)
+		var err error
+		payload, err = s.fetchAPIData(txCtx, domainEvent)
 		if err != nil {
 			return fmt.Errorf("api fetch failed: %w", err)
 		}
 
-		// 3. Publish to queue
-		if err := s.publishEvent(txCtx, payload); err != nil {
-			return fmt.Errorf("publish failed: %w", err)
-		}
-
-		// 4. Update status
-		return s.repo.UpdateStatus(txCtx, domainEvent.ID, models.StatusPublished, "")
+		// Update status
+		return s.repo.UpdateStatus(txCtx, domainEvent.ID, models.StatusProcessed, "")
 	})
 
 	if err != nil {
-		logger.Log.Errorf("Failed to process webhook event: %v", err)
+		logger.Log.Errorf("Transaction failed: %v", err)
+		return err
 	}
-	return err
+
+	// 2. Only after successful commit, publish the message
+	if err := s.publishEvent(ctx, payload); err != nil {
+		// If publish fails, update status to indicate failure
+		updateErr := s.repo.WithTransaction(ctx, func(txCtx context.Context) error {
+			return s.repo.UpdateStatus(txCtx, domainEvent.ID, models.StatusFailed, err.Error())
+		})
+		if updateErr != nil {
+			logger.Log.Errorf("Failed to update status after publish failure: %v", updateErr)
+		}
+		return fmt.Errorf("publish failed: %w", err)
+	}
+
+	// 3. Update status to published (optional)
+	if err := s.repo.WithTransaction(ctx, func(txCtx context.Context) error {
+		return s.repo.UpdateStatus(txCtx, domainEvent.ID, models.StatusPublished, "")
+	}); err != nil {
+		logger.Log.Errorf("Failed to update status to published: %v", err)
+	}
+
+	return nil
 }
 
 func (s *rtdnService) fetchAPIData(ctx context.Context, event *models.GooglePlayWebhookEvent) (*models.GooglePublishPayload, error) {

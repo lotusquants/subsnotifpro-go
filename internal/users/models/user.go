@@ -1,7 +1,8 @@
 package models
 
 import (
-	"subsnotifpro-go/internal/playstore/user/models"
+	appStoreUserModels "subsnotifpro-go/internal/appstore/user/models"
+	playstoreUserModels "subsnotifpro-go/internal/playstore/user/models"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,11 +16,11 @@ type AppUser struct {
 	UpdatedAt      time.Time `gorm:"autoUpdateTime"`
 
 	// Platform-specific details (corrected relationships)
-	GoogleAccountID *uuid.UUID            `gorm:"type:uuid"`
-	GoogleAccount   *models.GoogleAccount `gorm:"foreignKey:GoogleAccountID;constraint:OnDelete:SET NULL"`
+	GoogleAccountID *uuid.UUID                         `gorm:"type:uuid"`
+	GoogleAccount   *playstoreUserModels.GoogleAccount `gorm:"foreignKey:GoogleAccountID;constraint:OnDelete:SET NULL"`
 
-	// AppleAccountID  *uuid.UUID       `gorm:"type:uuid"`
-	// AppleAccount    *AppleAccount    `gorm:"foreignKey:AppleAccountID;constraint:OnDelete:SET NULL"`
+	AppleAccountID *uuid.UUID                       `gorm:"type:uuid"`
+	AppleAccount   *appStoreUserModels.AppleAccount `gorm:"foreignKey:AppleAccountID;constraint:OnDelete:SET NULL"`
 
 	PlatformChanges []AppUserPlatformChange `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
 }

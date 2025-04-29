@@ -13,6 +13,7 @@ import (
 
 type UserRepository interface {
 	CreateAppUserIfNotExists(ctx context.Context, tx *gorm.DB, obfuscatedID, platform string) (uuid.UUID, error)
+	LinkGoogleAccount(ctx context.Context, tx *gorm.DB, userID uuid.UUID, googleAccountID uuid.UUID) error
 	LogPlatformChange(ctx context.Context, tx *gorm.DB, userID uuid.UUID, oldPlatform, newPlatform string) error
 }
 
@@ -69,4 +70,18 @@ func (r *userRepository) LogPlatformChange(ctx context.Context, tx *gorm.DB, use
 		NewPlatform: newPlatform,
 	}
 	return tx.WithContext(ctx).Create(&entry).Error
+}
+
+// In internal/users/repository/user_repository.go
+func (r *userRepository) LinkGoogleAccount(
+	ctx context.Context,
+	tx *gorm.DB,
+	userID uuid.UUID,
+	googleAccountID uuid.UUID,
+) error {
+	return tx.WithContext(ctx).
+		Model(&models.AppUser{}).
+		Where("id = ?", userID).
+		Update("google_account_id", googleAccountID).
+		Error
 }

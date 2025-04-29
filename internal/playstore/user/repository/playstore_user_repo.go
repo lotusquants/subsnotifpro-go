@@ -10,6 +10,8 @@ import (
 
 	"subsnotifpro-go/internal/playstore/user/models"
 
+	"github.com/google/uuid"
+
 	"gorm.io/gorm"
 )
 
@@ -19,7 +21,13 @@ type PlaystoreUserRepository interface {
 		ctx context.Context,
 		tx *gorm.DB,
 		googleAccount *models.GoogleAccount,
-	) error
+	) (*models.GoogleAccount, error)
+
+	GoogleAccountExists(
+		ctx context.Context,
+		tx *gorm.DB,
+		accountID uuid.UUID,
+	) (bool, error)
 }
 
 type playstoreUserRepository struct{}
@@ -47,9 +55,9 @@ func (r *playstoreUserRepository) UpsertGoogleAccount(
 	ctx context.Context,
 	tx *gorm.DB,
 	googleAccount *models.GoogleAccount,
-) error {
+) (*models.GoogleAccount, error) {
 	if googleAccount.ObfuscatedExternalAccountID == "" {
-		return fmt.Errorf("missing ObfuscatedExternalAccountID")
+		return nil, fmt.Errorf("missing ObfuscatedExternalAccountID")
 	}
 
 	var existing models.GoogleAccount
@@ -58,12 +66,15 @@ func (r *playstoreUserRepository) UpsertGoogleAccount(
 		First(&existing).Error
 
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+		return nil, err
 	}
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// ✅ No existing record: Create new
-		return tx.WithContext(ctx).Create(googleAccount).Error
+		// Create new
+		if err := tx.WithContext(ctx).Create(googleAccount).Error; err != nil {
+			return nil, err
+		}
+		return googleAccount, nil
 	}
 
 	// ✅ Build update map only if values are different
@@ -95,9 +106,29 @@ func (r *playstoreUserRepository) UpsertGoogleAccount(
 	}
 
 	if len(updates) > 0 {
-		return tx.WithContext(ctx).Model(&existing).Updates(updates).Error
+		if err := tx.WithContext(ctx).Model(&existing).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+		// Reload the updated record
+		if err := tx.WithContext(ctx).First(&existing, existing.ID).Error; err != nil {
+			return nil, err
+		}
 	}
 
-	// ✅ No differences — skip update
-	return nil
+	return &existing, nil
+
+}
+
+func (r *playstoreUserRepository) GoogleAccountExists(
+	ctx context.Context,
+	tx *gorm.DB,
+	accountID uuid.UUID,
+) (bool, error) {
+	var count int64
+	err := tx.WithContext(ctx).
+		Model(&models.GoogleAccount{}).
+		Where("id = ?", accountID).
+		Count(&count).Error
+
+	return count > 0, err
 }

@@ -1,10 +1,13 @@
 package routes
 
 import (
+	appStoreSettingsHandler "subsnotifpro-go/internal/appstore/settings/handler"
+	appStoreWebhookHandler "subsnotifpro-go/internal/appstore/webhooks/handler"
 	playstoreApiHandler "subsnotifpro-go/internal/playstore/api/handler"
 	playstoreSubscriptionCatalogHandler "subsnotifpro-go/internal/playstore/products/handler"
 	playstoreRTDNHandler "subsnotifpro-go/internal/playstore/rtdn/handler"
 	playstoreSettingsHandler "subsnotifpro-go/internal/playstore/settings/handler"
+	unifiedSubscriptionHandler "subsnotifpro-go/internal/subscription/handler"
 )
 
 type RouteDependencies struct {
@@ -12,4 +15,7 @@ type RouteDependencies struct {
 	PlaystoreSettingsHandler            *playstoreSettingsHandler.PlaystoreSettingsHandler
 	PlaystoreApiHandler                 *playstoreApiHandler.PlaystoreApiHandler
 	PlaystoreSubscriptionCatalogHandler *playstoreSubscriptionCatalogHandler.SubscriptionCatalogHandler
+	AppStoreWebhookHandler              *appStoreWebhookHandler.AppStoreNotificationsHandler
+	AppStoreSettingsHandler             *appStoreSettingsHandler.AppStoreSettingsHandler
+	DashboardHandler                    *unifiedSubscriptionHandler.DashboardHandler
 }

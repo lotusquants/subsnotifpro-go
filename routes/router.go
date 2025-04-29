@@ -21,7 +21,9 @@ func SetupRouter(deps *RouteDependencies) *gin.Engine {
 	// Register all grouped routes
 
 	registerGooglePlayRoutes(router, deps)
+	registerAppStoreRoutes(router, deps)
 	registerAuthRoutes(router, deps)
+	registerDashboardRoutes(router, deps)
 
 	return router
 }

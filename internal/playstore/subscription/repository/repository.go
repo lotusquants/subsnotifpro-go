@@ -72,6 +72,8 @@ func (r *playstoreSubscriptionRepository) GetSubscriptionByPurchaseToken(
 
 	var sub models.SubscriptionPurchaseV2
 	err := tx.WithContext(ctx).
+		Preload("User").
+		Preload("User.GoogleAccount"). // Load user + nested GoogleAccount
 		Preload("SubscriptionCancellationContext").
 		Preload("LineItems").
 		Preload("LineItems.AutoRenewingPlan").
