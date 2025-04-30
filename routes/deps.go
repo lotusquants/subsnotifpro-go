@@ -18,4 +18,5 @@ type RouteDependencies struct {
 	AppStoreWebhookHandler              *appStoreWebhookHandler.AppStoreNotificationsHandler
 	AppStoreSettingsHandler             *appStoreSettingsHandler.AppStoreSettingsHandler
 	DashboardHandler                    *unifiedSubscriptionHandler.DashboardHandler
+	UnifiedSubscriptionsHandler         *unifiedSubscriptionHandler.UnifiedSubscriptionsHandler
 }

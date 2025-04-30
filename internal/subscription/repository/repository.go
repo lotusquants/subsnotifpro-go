@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"subsnotifpro-go/internal/pkg/contextutil"
@@ -15,8 +16,10 @@ import (
 type SubscriptionRepository interface {
 	WithTransaction(ctx context.Context, fn func(context.Context) error) error
 	UpsertSubscription(ctx context.Context, sub *models.UnifiedSubscription) error
-	// Add other repository methods here...
 
+	GetSubscriptionsByUserID(ctx context.Context, platformUserID string, page, pageSize int) ([]models.UnifiedSubscription, int64, error)
+	GetBySubscriptionID(ctx context.Context, subscriptionID string) (*models.UnifiedSubscription, error)
+	GetPlatformBySubscriptionID(ctx context.Context, subscriptionID string) (models.PlatformType, error)
 }
 
 type subscriptionRepository struct {
@@ -91,4 +94,68 @@ func (r *subscriptionRepository) UpsertSubscription(ctx context.Context, sub *mo
 			"updated_at",
 		}),
 	}).Create(sub).Error
+}
+
+func (r *subscriptionRepository) GetSubscriptionsByUserID(ctx context.Context, platformUserID string, page, pageSize int) ([]models.UnifiedSubscription, int64, error) {
+	var subscriptions []models.UnifiedSubscription
+	var total int64
+
+	offset := (page - 1) * pageSize
+
+	err := r.db.WithContext(ctx).
+		Where("platform_user_id = ?", platformUserID).
+		Order("start_date DESC").
+		Offset(offset).
+		Limit(pageSize).
+		Find(&subscriptions).Error
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Get total count
+	err = r.db.WithContext(ctx).
+		Model(&models.UnifiedSubscription{}).
+		Where("user_id = ?", platformUserID).
+		Count(&total).Error
+
+	return subscriptions, total, err
+}
+
+func (r *subscriptionRepository) GetBySubscriptionID(ctx context.Context, subscriptionID string) (*models.UnifiedSubscription, error) {
+	var subscription models.UnifiedSubscription
+
+	err := r.db.WithContext(ctx).
+		Where("subscription_id = ?", subscriptionID).
+		First(&subscription).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("subscription not found: %w", err)
+		}
+		return nil, fmt.Errorf("failed to get subscription: %w", err)
+	}
+
+	return &subscription, nil
+}
+
+func (r *subscriptionRepository) GetPlatformBySubscriptionID(ctx context.Context, subscriptionID string) (models.PlatformType, error) {
+	var platform struct {
+		ActivePlatform models.PlatformType
+	}
+
+	err := r.db.WithContext(ctx).
+		Model(&models.UnifiedSubscription{}).
+		Select("active_platform").
+		Where("subscription_id = ?", subscriptionID).
+		First(&platform).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", fmt.Errorf("subscription not found: %w", err)
+		}
+		return "", fmt.Errorf("failed to get platform: %w", err)
+	}
+
+	return platform.ActivePlatform, nil
 }

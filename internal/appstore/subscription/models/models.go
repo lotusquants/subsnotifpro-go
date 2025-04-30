@@ -112,6 +112,10 @@ type AppStoreSubscription struct {
 
 type SubscriptionEventType string
 
+func (s SubscriptionEventType) String() {
+	panic("unimplemented")
+}
+
 const (
 	// Core lifecycle events
 	EventTypeInitialPurchase SubscriptionEventType = "INITIAL_PURCHASE"

@@ -55,10 +55,12 @@ type PlaystoreSubscriptionRepository interface {
 	CreateSubscriptionEvent(ctx context.Context, tx *gorm.DB, event *models.SubscriptionEvent) error
 }
 
-type playstoreSubscriptionRepository struct{}
+type playstoreSubscriptionRepository struct {
+	db *gorm.DB
+}
 
-func NewPlaystoreSubscriptionRepository() PlaystoreSubscriptionRepository {
-	return &playstoreSubscriptionRepository{}
+func NewPlaystoreSubscriptionRepository(db *gorm.DB) PlaystoreSubscriptionRepository {
+	return &playstoreSubscriptionRepository{db: db}
 }
 
 func (r *playstoreSubscriptionRepository) GetSubscriptionByPurchaseToken(

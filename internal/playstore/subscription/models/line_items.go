@@ -56,6 +56,9 @@ type SubscriptionLineItemHistory struct {
 	ID             uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 	SubscriptionID uuid.UUID `gorm:"type:uuid;not null;index"`
 
+	// 📦 Product/Plan info
+	ProductID string `gorm:"type:varchar(100);not null;index"`
+
 	LineItemID uuid.UUID `gorm:"type:uuid;not null;index"`
 	PlanType   PlanType  `gorm:"type:varchar(20);not null"`
 

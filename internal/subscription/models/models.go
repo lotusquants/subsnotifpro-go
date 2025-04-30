@@ -69,3 +69,36 @@ const (
 	StatusOnHold           SubscriptionStatus = "ON_HOLD"
 	StatusCanceled         SubscriptionStatus = "CANCELED"
 )
+
+// SubscriptionEvent represents a unified event model across all platforms
+type UnifiedSubscriptionEvent struct {
+	ID             string       `json:"id" gorm:"primaryKey"`
+	SubscriptionID string       `json:"subscription_id" gorm:"index"`
+	EventType      string       `json:"event_type" gorm:"index"`
+	Timestamp      time.Time    `json:"timestamp" gorm:"index"`
+	Platform       PlatformType `json:"platform" gorm:"index"`
+	Amount         float64      `json:"amount" gorm:"type:decimal(10,2)"`
+	Currency       string       `json:"currency" gorm:"type:varchar(3)"`
+	CreatedAt      time.Time    `json:"created_at" gorm:"autoCreateTime"`
+	ProductID      string       `json:"product_id" gorm:"index"`
+	BasePlanID     *string      `json:"base_plan_id" gorm:"index"`
+	ActiveOfferID  *string      `json:"active_offer_id" gorm:"index"`
+}
+
+// Event types that are common across platforms
+const (
+	EventTypePurchase    = "PURCHASE"
+	EventTypeRenewal     = "RENEWAL"
+	EventTypeCancel      = "CANCEL"
+	EventTypeGracePeriod = "GRACE_PERIOD"
+	EventTypeExpiration  = "EXPIRATION"
+	EventTypePause       = "PAUSE"
+	EventTypeResume      = "RESUME"
+)
+
+// Status types for events
+const (
+	EventStatusSuccess = "SUCCESS"
+	EventStatusFailed  = "FAILED"
+	EventStatusPending = "PENDING"
+)

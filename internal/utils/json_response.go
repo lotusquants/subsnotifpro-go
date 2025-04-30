@@ -11,6 +11,14 @@ import (
 // ------------------------------------
 // Helper Functions for JSON Responses
 // ------------------------------------
+// PaginatedResponse represents a paginated API response
+type PaginatedResponse struct {
+	Data       interface{} `json:"data"`
+	Total      int64       `json:"total"`
+	Page       int         `json:"page"`
+	PageSize   int         `json:"page_size"`
+	TotalPages int         `json:"total_pages"`
+}
 
 // writeJSONResponse writes a generic JSON response with given status and payload.
 func WriteJSONResponse(w http.ResponseWriter, status int, payload interface{}) {
@@ -34,4 +42,36 @@ func WriteGinErrorResponse(c *gin.Context, statusCode int, message string) {
 
 func WriteGinJSONResponse(c *gin.Context, statusCode int, data interface{}) {
 	c.JSON(statusCode, data)
+}
+
+// WriteGinPaginatedResponse writes a paginated JSON response using Gin
+func WriteGinPaginatedResponse(c *gin.Context, statusCode int, data interface{}, total int64, page, pageSize int) {
+	totalPages := 0
+	if pageSize > 0 {
+		totalPages = int((total + int64(pageSize) - 1) / int64(pageSize))
+	}
+
+	c.JSON(statusCode, PaginatedResponse{
+		Data:       data,
+		Total:      total,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalPages: totalPages,
+	})
+}
+
+// WritePaginatedResponse writes a paginated JSON response for standard net/http
+func WritePaginatedResponse(w http.ResponseWriter, status int, data interface{}, total int64, page, pageSize int) {
+	totalPages := 0
+	if pageSize > 0 {
+		totalPages = int((total + int64(pageSize) - 1) / int64(pageSize))
+	}
+
+	WriteJSONResponse(w, status, PaginatedResponse{
+		Data:       data,
+		Total:      total,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalPages: totalPages,
+	})
 }

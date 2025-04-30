@@ -149,7 +149,7 @@ func main() {
 
 	psCatalogService := playstoreCatalogService.NewSubscriptionCatalogService(ctx, psCatalogRepo, psApiService)
 
-	subscriptionRepo := playstoreSubscriptionRepository.NewPlaystoreSubscriptionRepository()
+	subscriptionRepo := playstoreSubscriptionRepository.NewPlaystoreSubscriptionRepository(db)
 
 	subscriptionService := playstoreSubscriptionService.NewPlaystoreSubscriptionService(db, subscriptionRepo, psUserService, psApiService, psCatalogService, unifiedSubscriptionService)
 
@@ -179,6 +179,7 @@ func main() {
 	appStoreSettingsHandler := appStoreSettingsHandler.NewAppStoreSettingsHandler(appStoreSettingsService)
 
 	dashBoardHandler := unifiedSubscriptionHandler.NewDashboardHandler(dashboardSvc)
+	unifiedSubscriptionHandler := unifiedSubscriptionHandler.NewHandler(unifiedSubscriptionService)
 
 	log.Println(" ✅ Initialized Appstore Services...")
 
@@ -189,9 +190,10 @@ func main() {
 		PlaystoreApiHandler:                 psApiHandler,
 		PlaystoreSubscriptionCatalogHandler: psSubscriptionCatalogHandler,
 
-		AppStoreWebhookHandler:  appStoreWebhookHandler,
-		AppStoreSettingsHandler: appStoreSettingsHandler,
-		DashboardHandler:        dashBoardHandler,
+		AppStoreWebhookHandler:      appStoreWebhookHandler,
+		AppStoreSettingsHandler:     appStoreSettingsHandler,
+		DashboardHandler:            dashBoardHandler,
+		UnifiedSubscriptionsHandler: unifiedSubscriptionHandler,
 	}
 
 	router := routes.SetupRouter(deps)

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -18,6 +19,11 @@ import (
 	"gorm.io/gorm"
 )
 
+var (
+	ErrSubscriptionNotFound = errors.New("subscription not found")
+	ErrUnsupportedPlatform  = errors.New("unsupported platform")
+)
+
 // UnifiedSubscriptionService interface
 type UnifiedSubscriptionService interface {
 	CreateUnifiedSubscriptionFromAppStore(ctx context.Context, sub *appStoreModels.AppStoreSubscription, eventType *string) error
@@ -25,21 +31,34 @@ type UnifiedSubscriptionService interface {
 
 	ProcessUnifiedSubscriptionEvent(ctx context.Context, event events.UnifiedEvent) error
 	UpsertUnifiedSubscription(ctx context.Context, sub *models.UnifiedSubscription) error
+
+	GetSubscriptionsByUserID(ctx context.Context, userID string, page, pageSize int) ([]models.UnifiedSubscription, int64, error)
+	GetSubscriptionEvents(ctx context.Context, subscriptionID string, page, pageSize int) ([]models.UnifiedSubscriptionEvent, int, error)
+	GetPlaystoreSubscriptionEvents(ctx context.Context, subscriptionID string, page, pageSize int) ([]models.UnifiedSubscriptionEvent, int, error)
+	GetAppStoreSubscriptionEvents(ctx context.Context, subscriptionID string, page, pageSize int) ([]models.UnifiedSubscriptionEvent, int, error)
 }
 
 type unifiedSubscriptionService struct {
-	publisher    *publisher.UnifiedEventPublisher
-	statusMapper *mapper.StatusMapper
-	repo         repository.SubscriptionRepository
-	dashboardSvc DashboardService
+	publisher          *publisher.UnifiedEventPublisher
+	statusMapper       *mapper.StatusMapper
+	repo               repository.SubscriptionRepository
+	dashboardSvc       DashboardService
+	playstoreEventRepo repository.PlaystoreEventRepository
+	appstoreEventRepo  repository.AppStoreEventRepository
 }
 
-func NewUnifiedSubscriptionService(db *gorm.DB, publisher *publisher.UnifiedEventPublisher, dashboardSvc DashboardService, repo repository.SubscriptionRepository) UnifiedSubscriptionService {
+func NewUnifiedSubscriptionService(db *gorm.DB,
+	publisher *publisher.UnifiedEventPublisher,
+	dashboardSvc DashboardService,
+	repo repository.SubscriptionRepository,
+) UnifiedSubscriptionService {
 	return &unifiedSubscriptionService{
-		publisher:    publisher,
-		statusMapper: mapper.NewStatusMapper(),
-		repo:         repo,
-		dashboardSvc: dashboardSvc,
+		publisher:          publisher,
+		statusMapper:       mapper.NewStatusMapper(),
+		repo:               repo,
+		dashboardSvc:       dashboardSvc,
+		playstoreEventRepo: repository.NewPlaystoreEventRepository(db),
+		appstoreEventRepo:  repository.NewAppStoreEventRepository(db),
 	}
 }
 
@@ -246,4 +265,47 @@ func (s *unifiedSubscriptionService) UpsertUnifiedSubscription(
 	sub *models.UnifiedSubscription,
 ) error {
 	return s.repo.UpsertSubscription(ctx, sub)
+}
+
+func (s *unifiedSubscriptionService) GetSubscriptionsByUserID(ctx context.Context, platformUserID string, page, pageSize int) ([]models.UnifiedSubscription, int64, error) {
+	return s.repo.GetSubscriptionsByUserID(ctx, platformUserID, page, pageSize)
+}
+
+func (s *unifiedSubscriptionService) GetSubscriptionEvents(
+	ctx context.Context,
+	subscriptionID string,
+	page, pageSize int,
+) ([]models.UnifiedSubscriptionEvent, int, error) {
+	// 1. Get platform only (optimized query)
+	platform, err := s.repo.GetPlatformBySubscriptionID(ctx, subscriptionID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get subscription platform: %w", err)
+	}
+
+	// 2. Delegate to platform-specific service
+	var events []models.UnifiedSubscriptionEvent
+	var total int
+
+	switch platform {
+	case models.PlatformGoogle:
+		playEvents, playTotal, err := s.GetPlaystoreSubscriptionEvents(ctx, subscriptionID, page, pageSize)
+		if err != nil {
+			return nil, 0, fmt.Errorf("google play service error: %w", err)
+		}
+		events = playEvents
+		total = playTotal
+
+	case models.PlatformApple:
+		appStoreEvents, appStoreTotal, err := s.GetAppStoreSubscriptionEvents(ctx, subscriptionID, page, pageSize)
+		if err != nil {
+			return nil, 0, fmt.Errorf("app store service error: %w", err)
+		}
+		events = appStoreEvents
+		total = appStoreTotal
+
+	default:
+		return nil, 0, ErrUnsupportedPlatform
+	}
+
+	return events, total, nil
 }

@@ -24,6 +24,7 @@ func SetupRouter(deps *RouteDependencies) *gin.Engine {
 	registerAppStoreRoutes(router, deps)
 	registerAuthRoutes(router, deps)
 	registerDashboardRoutes(router, deps)
+	registerUnifiedSubscriptionRoutes(router, deps)
 
 	return router
 }

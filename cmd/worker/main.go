@@ -113,7 +113,7 @@ func main() {
 	psUserService := playstoreUserService.NewPlaystoreUserService(userService, psUserRepo)
 	psCatalogRepo := playstoreCatalogRepo.NewSubscriptionCatalogRepository(db, 50)
 	psCatalogService := playstoreCatalogService.NewSubscriptionCatalogService(ctx, psCatalogRepo, apiService)
-	subscriptionRepo := playstoreSubscriptionRepository.NewPlaystoreSubscriptionRepository()
+	subscriptionRepo := playstoreSubscriptionRepository.NewPlaystoreSubscriptionRepository(db)
 	subscriptionService := playstoreSubscriptionService.NewPlaystoreSubscriptionService(db, subscriptionRepo, psUserService, apiService, psCatalogService, unifiedSubscriptionService)
 	rtdnRepo := rtdnRepo.NewRTDNRepository(db)
 	rtdnService := rtdnService.NewRTDNService(ctx, rtdnRepo, apiService, subscriptionService, db, googlePlayPublisher, rmqManager, &cfg.RabbitMQ)
