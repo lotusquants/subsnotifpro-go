@@ -30,7 +30,7 @@ func StartMetricsServer(ctx context.Context) {
 		w.Write([]byte("OK"))
 	})
 
-	log.Println("📊 Prometheus metrics available at http://localhost:%s/metrics", port)
+	log.Printf("📊 Prometheus metrics available at http://localhost:%s/metrics", port)
 
 	go func() {
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
