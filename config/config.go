@@ -159,6 +159,14 @@ type AzureDatabaseConfig struct {
 }
 
 // Config stores all environment configurations
+// JWTConfig stores JWT authentication configuration
+type JWTConfig struct {
+	SecretKey     string
+	TokenDuration time.Duration
+	RefreshDuration time.Duration
+	Issuer        string
+}
+
 type Config struct {
 	ServerPort string
 	ServerMode string
@@ -170,6 +178,9 @@ type Config struct {
 	MessagingType MessagingType
 	RabbitMQ      RabbitMQConfig
 	ServiceBus    ServiceBusConfig
+
+	// JWT Configuration
+	JWT JWTConfig
 }
 
 // LoadConfig loads the environment variables from .env (if available) and system environment variables
@@ -191,6 +202,9 @@ func LoadConfig() *Config {
 
 		// Messaging Type Selection
 		MessagingType: MessagingType(getEnv("MESSAGING_TYPE", "rabbitmq")),
+
+		// JWT Configuration
+		JWT: loadJWTConfig(),
 	}
 
 	// Load configurations based on messaging type
@@ -444,15 +458,25 @@ func getEnvAsInt(key string, defaultValue int) int {
 	return result
 }
 
-// getEnvAsDuration fetches the environment variable as time.Duration or returns a default value if missing
+// loadJWTConfig loads JWT configuration from environment variables
+func loadJWTConfig() JWTConfig {
+	return JWTConfig{
+		SecretKey:       getEnv("JWT_SECRET_KEY", "your-secret-key-change-this-in-production"),
+		TokenDuration:   getEnvAsDuration("JWT_TOKEN_DURATION", 24*time.Hour),
+		RefreshDuration: getEnvAsDuration("JWT_REFRESH_DURATION", 7*24*time.Hour),
+		Issuer:          getEnv("JWT_ISSUER", "subsnotifpro-go"),
+	}
+}
+
+// getEnvAsDuration fetches the environment variable as duration or returns a default value if missing
 func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
 	value, exists := os.LookupEnv(key)
 	if !exists {
 		return defaultValue
 	}
-	result, err := time.ParseDuration(value)
+	duration, err := time.ParseDuration(value)
 	if err != nil {
 		return defaultValue
 	}
-	return result
+	return duration
 }
