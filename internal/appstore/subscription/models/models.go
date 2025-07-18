@@ -112,8 +112,8 @@ type AppStoreSubscription struct {
 
 type SubscriptionEventType string
 
-func (s SubscriptionEventType) String() {
-	panic("unimplemented")
+func (s SubscriptionEventType) String() string {
+	return string(s)
 }
 
 const (
