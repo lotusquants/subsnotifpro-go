@@ -17,39 +17,39 @@ type MetricsRegistry struct {
 	ProcessedEvents     *prometheus.CounterVec
 	FailedEvents        *prometheus.CounterVec
 	EventProcessingTime *prometheus.HistogramVec
-	
+
 	// Queue metrics
-	DLQSize        prometheus.Gauge
-	QueueSize      *prometheus.GaugeVec
-	QueueMessages  *prometheus.CounterVec
-	
+	DLQSize       prometheus.Gauge
+	QueueSize     *prometheus.GaugeVec
+	QueueMessages *prometheus.CounterVec
+
 	// HTTP metrics
-	HTTPRequestsTotal    *prometheus.CounterVec
-	HTTPRequestDuration  *prometheus.HistogramVec
-	HTTPResponseSize     *prometheus.HistogramVec
-	
+	HTTPRequestsTotal   *prometheus.CounterVec
+	HTTPRequestDuration *prometheus.HistogramVec
+	HTTPResponseSize    *prometheus.HistogramVec
+
 	// Authentication metrics
 	AuthenticationTotal   *prometheus.CounterVec
 	AuthenticationLatency *prometheus.HistogramVec
-	
+
 	// Database metrics
 	DatabaseConnections  *prometheus.GaugeVec
 	DatabaseQueries      *prometheus.CounterVec
 	DatabaseQueryLatency *prometheus.HistogramVec
-	
+
 	// Business metrics
-	SubscriptionEvents     *prometheus.CounterVec
-	Revenue               *prometheus.CounterVec
-	ActiveSubscriptions   *prometheus.GaugeVec
-	
+	SubscriptionEvents  *prometheus.CounterVec
+	Revenue             *prometheus.CounterVec
+	ActiveSubscriptions *prometheus.GaugeVec
+
 	// System metrics
-	SystemInfo           *prometheus.GaugeVec
-	ProcessCPUUsage      prometheus.Gauge
-	ProcessMemoryUsage   prometheus.Gauge
-	
+	SystemInfo         *prometheus.GaugeVec
+	ProcessCPUUsage    prometheus.Gauge
+	ProcessMemoryUsage prometheus.Gauge
+
 	// Rate limiting metrics
-	RateLimitHits        *prometheus.CounterVec
-	RateLimitAllowed     *prometheus.CounterVec
+	RateLimitHits    *prometheus.CounterVec
+	RateLimitAllowed *prometheus.CounterVec
 }
 
 // NewMetricsRegistry creates and registers all metrics
@@ -63,7 +63,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"event_type", "platform", "status"},
 		),
-		
+
 		FailedEvents: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "subsnotifpro_events_failed_total",
@@ -71,7 +71,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"event_type", "platform", "error_type"},
 		),
-		
+
 		EventProcessingTime: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "subsnotifpro_event_processing_duration_seconds",
@@ -80,7 +80,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"event_type", "platform"},
 		),
-		
+
 		// Queue metrics
 		DLQSize: prometheus.NewGauge(
 			prometheus.GaugeOpts{
@@ -88,7 +88,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 				Help: "Current number of messages in the dead letter queue",
 			},
 		),
-		
+
 		QueueSize: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "subsnotifpro_queue_size",
@@ -96,7 +96,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"queue_name", "type"},
 		),
-		
+
 		QueueMessages: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "subsnotifpro_queue_messages_total",
@@ -104,7 +104,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"queue_name", "status"},
 		),
-		
+
 		// HTTP metrics
 		HTTPRequestsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -113,7 +113,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"method", "path", "status_code"},
 		),
-		
+
 		HTTPRequestDuration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "subsnotifpro_http_request_duration_seconds",
@@ -122,7 +122,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"method", "path", "status_code"},
 		),
-		
+
 		HTTPResponseSize: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "subsnotifpro_http_response_size_bytes",
@@ -131,7 +131,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"method", "path", "status_code"},
 		),
-		
+
 		// Authentication metrics
 		AuthenticationTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -140,7 +140,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"method", "status"},
 		),
-		
+
 		AuthenticationLatency: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "subsnotifpro_authentication_duration_seconds",
@@ -149,7 +149,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"method"},
 		),
-		
+
 		// Database metrics
 		DatabaseConnections: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -158,7 +158,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"database", "status"},
 		),
-		
+
 		DatabaseQueries: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "subsnotifpro_database_queries_total",
@@ -166,7 +166,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"database", "operation", "status"},
 		),
-		
+
 		DatabaseQueryLatency: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "subsnotifpro_database_query_duration_seconds",
@@ -175,7 +175,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"database", "operation"},
 		),
-		
+
 		// Business metrics
 		SubscriptionEvents: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -184,7 +184,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"platform", "event_type", "product_id"},
 		),
-		
+
 		Revenue: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "subsnotifpro_revenue_total",
@@ -192,7 +192,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"platform", "currency", "product_id"},
 		),
-		
+
 		ActiveSubscriptions: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "subsnotifpro_active_subscriptions",
@@ -200,7 +200,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"platform", "product_id"},
 		),
-		
+
 		// System metrics
 		SystemInfo: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -209,21 +209,21 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"version", "go_version", "platform"},
 		),
-		
+
 		ProcessCPUUsage: prometheus.NewGauge(
 			prometheus.GaugeOpts{
 				Name: "subsnotifpro_process_cpu_usage_percent",
 				Help: "Current CPU usage percentage",
 			},
 		),
-		
+
 		ProcessMemoryUsage: prometheus.NewGauge(
 			prometheus.GaugeOpts{
 				Name: "subsnotifpro_process_memory_usage_bytes",
 				Help: "Current memory usage in bytes",
 			},
 		),
-		
+
 		// Rate limiting metrics
 		RateLimitHits: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -232,7 +232,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			},
 			[]string{"client_ip", "endpoint"},
 		),
-		
+
 		RateLimitAllowed: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "subsnotifpro_rate_limit_allowed_total",
@@ -241,7 +241,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 			[]string{"client_ip", "endpoint"},
 		),
 	}
-	
+
 	// Register all metrics
 	prometheus.MustRegister(
 		registry.ProcessedEvents,
@@ -267,7 +267,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 		registry.RateLimitHits,
 		registry.RateLimitAllowed,
 	)
-	
+
 	return registry
 }
 
@@ -375,20 +375,20 @@ func NewMetricsServer(port string, logger logger.Logger) *MetricsServer {
 func (s *MetricsServer) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
-	
+
 	// Health check endpoint for the metrics server
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-	
+
 	server := &http.Server{
 		Addr:    ":" + s.port,
 		Handler: mux,
 	}
-	
+
 	s.logger.Info("Starting metrics server", logger.F("port", s.port))
-	
+
 	go func() {
 		<-ctx.Done()
 		s.logger.Info("Shutting down metrics server")
@@ -396,6 +396,6 @@ func (s *MetricsServer) Start(ctx context.Context) error {
 		defer cancel()
 		server.Shutdown(shutdownCtx)
 	}()
-	
+
 	return server.ListenAndServe()
 }

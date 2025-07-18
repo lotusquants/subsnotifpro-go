@@ -127,10 +127,10 @@ func (f *MessagingFactory) GetPublisherOptions(channel *amqp.Channel, topicName 
 
 	case config.MessagingTypeServiceBus:
 		return ServiceBusPublisherOptions{
-			Namespace:         f.config.ServiceBus.Namespace,
-			ConnectionString:  f.config.ServiceBus.ConnectionString,
+			Namespace:          f.config.ServiceBus.Namespace,
+			ConnectionString:   f.config.ServiceBus.ConnectionString,
 			UseManagedIdentity: f.config.ServiceBus.UseManagedIdentity,
-			TopicName:         topicName,
+			TopicName:          topicName,
 		}
 
 	default:
@@ -175,15 +175,15 @@ func (f *MessagingFactory) GetConsumerOptions(
 
 	case config.MessagingTypeServiceBus:
 		return ServiceBusConsumerOptions{
-			Namespace:         f.config.ServiceBus.Namespace,
-			ConnectionString:  f.config.ServiceBus.ConnectionString,
+			Namespace:          f.config.ServiceBus.Namespace,
+			ConnectionString:   f.config.ServiceBus.ConnectionString,
 			UseManagedIdentity: f.config.ServiceBus.UseManagedIdentity,
-			TopicName:         topicName,
-			SubscriptionName:  subscriptionName,
-			MaxRetries:        f.config.ServiceBus.MaxRetries,
-			WorkerCount:       f.config.ServiceBus.WorkerCount,
-			Handler:           handler,
-			Publisher:         publisher,
+			TopicName:          topicName,
+			SubscriptionName:   subscriptionName,
+			MaxRetries:         f.config.ServiceBus.MaxRetries,
+			WorkerCount:        f.config.ServiceBus.WorkerCount,
+			Handler:            handler,
+			Publisher:          publisher,
 		}
 
 	default:
@@ -208,7 +208,7 @@ func NewPublisher(cfg *config.Config) (MessagePublisher, error) {
 			cfg.RabbitMQ.Port,
 			cfg.RabbitMQ.VHost,
 		)
-		
+
 		conn, err := amqp.Dial(rabbitURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
@@ -240,8 +240,8 @@ func NewPublisher(cfg *config.Config) (MessagePublisher, error) {
 
 	case config.MessagingTypeServiceBus:
 		opts := ServiceBusPublisherOptions{
-			Namespace:         cfg.ServiceBus.Namespace,
-			ConnectionString:  cfg.ServiceBus.ConnectionString,
+			Namespace:          cfg.ServiceBus.Namespace,
+			ConnectionString:   cfg.ServiceBus.ConnectionString,
 			UseManagedIdentity: cfg.ServiceBus.UseManagedIdentity,
 		}
 

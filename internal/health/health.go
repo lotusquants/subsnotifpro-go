@@ -22,29 +22,29 @@ const (
 
 // ComponentHealth represents the health of a specific component
 type ComponentHealth struct {
-	Status      HealthStatus `json:"status"`
-	Message     string       `json:"message,omitempty"`
-	LastChecked time.Time    `json:"last_checked"`
+	Status       HealthStatus  `json:"status"`
+	Message      string        `json:"message,omitempty"`
+	LastChecked  time.Time     `json:"last_checked"`
 	ResponseTime time.Duration `json:"response_time_ms"`
 }
 
 // HealthResponse represents the overall health response
 type HealthResponse struct {
-	Status     HealthStatus                `json:"status"`
-	Timestamp  time.Time                   `json:"timestamp"`
-	Components map[string]ComponentHealth  `json:"components"`
-	Version    string                      `json:"version,omitempty"`
-	Uptime     time.Duration               `json:"uptime_seconds"`
+	Status     HealthStatus               `json:"status"`
+	Timestamp  time.Time                  `json:"timestamp"`
+	Components map[string]ComponentHealth `json:"components"`
+	Version    string                     `json:"version,omitempty"`
+	Uptime     time.Duration              `json:"uptime_seconds"`
 }
 
 // HealthChecker manages health checks for various components
 type HealthChecker struct {
-	db                *gorm.DB
-	rabbitConn        *amqp.Connection
-	serviceBusClient  *azservicebus.Client
-	messagingType     string
-	startTime         time.Time
-	version           string
+	db               *gorm.DB
+	rabbitConn       *amqp.Connection
+	serviceBusClient *azservicebus.Client
+	messagingType    string
+	startTime        time.Time
+	version          string
 }
 
 // NewHealthChecker creates a new health checker
@@ -70,7 +70,7 @@ func (h *HealthChecker) SetServiceBusClient(client *azservicebus.Client) {
 // CheckDatabase checks the database health
 func (h *HealthChecker) CheckDatabase(ctx context.Context) ComponentHealth {
 	start := time.Now()
-	
+
 	if h.db == nil {
 		return ComponentHealth{
 			Status:       StatusUnhealthy,
@@ -104,10 +104,10 @@ func (h *HealthChecker) CheckDatabase(ctx context.Context) ComponentHealth {
 	// Check database stats
 	stats := sqlDB.Stats()
 	responseTime := time.Since(start)
-	
+
 	message := "Database is healthy"
 	status := StatusHealthy
-	
+
 	// Check for potential issues
 	if stats.OpenConnections > 80 { // Assuming max 100 connections
 		status = StatusDegraded
@@ -125,7 +125,7 @@ func (h *HealthChecker) CheckDatabase(ctx context.Context) ComponentHealth {
 // CheckRabbitMQ checks RabbitMQ health
 func (h *HealthChecker) CheckRabbitMQ(ctx context.Context) ComponentHealth {
 	start := time.Now()
-	
+
 	if h.rabbitConn == nil {
 		return ComponentHealth{
 			Status:       StatusUnhealthy,
@@ -168,7 +168,7 @@ func (h *HealthChecker) CheckRabbitMQ(ctx context.Context) ComponentHealth {
 // CheckServiceBus checks Azure Service Bus health
 func (h *HealthChecker) CheckServiceBus(ctx context.Context) ComponentHealth {
 	start := time.Now()
-	
+
 	if h.serviceBusClient == nil {
 		return ComponentHealth{
 			Status:       StatusUnhealthy,
@@ -216,13 +216,13 @@ func (h *HealthChecker) CheckMessaging(ctx context.Context) ComponentHealth {
 // PerformHealthCheck performs a comprehensive health check
 func (h *HealthChecker) PerformHealthCheck(ctx context.Context) HealthResponse {
 	components := make(map[string]ComponentHealth)
-	
+
 	// Check database
 	components["database"] = h.CheckDatabase(ctx)
-	
+
 	// Check messaging
 	components["messaging"] = h.CheckMessaging(ctx)
-	
+
 	// Determine overall status
 	overallStatus := StatusHealthy
 	for _, component := range components {
@@ -234,7 +234,7 @@ func (h *HealthChecker) PerformHealthCheck(ctx context.Context) HealthResponse {
 			overallStatus = StatusDegraded
 		}
 	}
-	
+
 	return HealthResponse{
 		Status:     overallStatus,
 		Timestamp:  time.Now(),
@@ -248,10 +248,10 @@ func (h *HealthChecker) PerformHealthCheck(ctx context.Context) HealthResponse {
 func (h *HealthChecker) HTTPHealthHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		
+
 		// Perform health check
 		healthResponse := h.PerformHealthCheck(ctx)
-		
+
 		// Set appropriate HTTP status code
 		statusCode := http.StatusOK
 		if healthResponse.Status == StatusUnhealthy {
@@ -259,11 +259,11 @@ func (h *HealthChecker) HTTPHealthHandler() http.HandlerFunc {
 		} else if healthResponse.Status == StatusDegraded {
 			statusCode = http.StatusPartialContent
 		}
-		
+
 		// Set response headers
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(statusCode)
-		
+
 		// Encode and send response
 		json.NewEncoder(w).Encode(healthResponse)
 	}
@@ -273,11 +273,11 @@ func (h *HealthChecker) HTTPHealthHandler() http.HandlerFunc {
 func (h *HealthChecker) ReadinessHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		
+
 		// Check only critical components for readiness
 		dbHealth := h.CheckDatabase(ctx)
 		messagingHealth := h.CheckMessaging(ctx)
-		
+
 		if dbHealth.Status == StatusUnhealthy || messagingHealth.Status == StatusUnhealthy {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			json.NewEncoder(w).Encode(map[string]string{
@@ -286,7 +286,7 @@ func (h *HealthChecker) ReadinessHandler() http.HandlerFunc {
 			})
 			return
 		}
-		
+
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{
 			"status": "ready",
@@ -300,7 +300,7 @@ func (h *HealthChecker) LivenessHandler() http.HandlerFunc {
 		// Simple liveness check - just verify the service is running
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{
-			"status": "alive",
+			"status":    "alive",
 			"timestamp": time.Now().Format(time.RFC3339),
 		})
 	}

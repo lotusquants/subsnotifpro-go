@@ -65,15 +65,15 @@ type RabbitMQConfig struct {
 type MessagingType string
 
 const (
-	MessagingTypeRabbitMQ    MessagingType = "rabbitmq"
-	MessagingTypeServiceBus  MessagingType = "servicebus"
+	MessagingTypeRabbitMQ   MessagingType = "rabbitmq"
+	MessagingTypeServiceBus MessagingType = "servicebus"
 )
 
 type ServiceBusConfig struct {
 	// Connection
-	Namespace         string
-	ConnectionString  string // For development only
-	UseManagedIdentity bool  // Preferred for production
+	Namespace          string
+	ConnectionString   string // For development only
+	UseManagedIdentity bool   // Preferred for production
 
 	// Retry Policy
 	MaxRetries int
@@ -144,13 +144,13 @@ type AzureDatabaseConfig struct {
 	UseManagedIdentity bool
 
 	// Azure Database specific settings
-	ServerName   string // Azure Database server name
-	ResourceID   string // Full resource ID for managed identity
-	TenantID     string // Azure tenant ID
+	ServerName string // Azure Database server name
+	ResourceID string // Full resource ID for managed identity
+	TenantID   string // Azure tenant ID
 
 	// SSL and Security
-	SSLMode        string // require, verify-full, verify-ca, disable
-	SSLRootCert    string // Path to SSL root certificate
+	SSLMode     string // require, verify-full, verify-ca, disable
+	SSLRootCert string // Path to SSL root certificate
 
 	// Connection settings
 	ConnectTimeout time.Duration
@@ -161,10 +161,10 @@ type AzureDatabaseConfig struct {
 // Config stores all environment configurations
 // JWTConfig stores JWT authentication configuration
 type JWTConfig struct {
-	SecretKey     string
-	TokenDuration time.Duration
+	SecretKey       string
+	TokenDuration   time.Duration
 	RefreshDuration time.Duration
-	Issuer        string
+	Issuer          string
 }
 
 type Config struct {
@@ -331,30 +331,30 @@ func loadDatabaseConfig() DatabaseConfig {
 	}
 
 	config := DatabaseConfig{
-		DeploymentMode: deploymentMode,
-		Type:           getEnv("DB_TYPE", "postgres"),
-		Host:           getEnv("DB_HOST", getDefaultHost(deploymentMode)),
-		Port:           getEnv("DB_PORT", "5432"),
-		User:           getEnv("DB_USER", "postgres"),
-		Password:       getEnv("DB_PASSWORD", "postgres"),
-		Name:           getEnv("DB_NAME", getDefaultDBName(deploymentMode)),
-		SSLMode:        getEnv("DB_SSLMODE", getDefaultSSLMode(deploymentMode)),
-		MaxOpenConns:   maxOpenConns,
-		MaxIdleConns:   maxIdleConns,
+		DeploymentMode:  deploymentMode,
+		Type:            getEnv("DB_TYPE", "postgres"),
+		Host:            getEnv("DB_HOST", getDefaultHost(deploymentMode)),
+		Port:            getEnv("DB_PORT", "5432"),
+		User:            getEnv("DB_USER", "postgres"),
+		Password:        getEnv("DB_PASSWORD", "postgres"),
+		Name:            getEnv("DB_NAME", getDefaultDBName(deploymentMode)),
+		SSLMode:         getEnv("DB_SSLMODE", getDefaultSSLMode(deploymentMode)),
+		MaxOpenConns:    maxOpenConns,
+		MaxIdleConns:    maxIdleConns,
 		ConnMaxLifetime: connMaxLifetime,
-		QueryLogging:   getEnv("DB_QUERY_LOGGING", "false") == "true",
-		SSLRequired:    getEnv("DB_SSL_REQUIRED", "false") == "true",
+		QueryLogging:    getEnv("DB_QUERY_LOGGING", "false") == "true",
+		SSLRequired:     getEnv("DB_SSL_REQUIRED", "false") == "true",
 	}
 
 	// Load Azure-specific configuration if using managed deployment
 	if deploymentMode == DatabaseDeploymentModeManaged {
 		config.Azure = AzureDatabaseConfig{
 			UseManagedIdentity: getEnv("DB_AZURE_USE_MANAGED_IDENTITY", "false") == "true",
-			ServerName:        getEnv("DB_AZURE_SERVER_NAME", ""),
-			ResourceID:        getEnv("DB_AZURE_RESOURCE_ID", ""),
-			TenantID:          getEnv("DB_AZURE_TENANT_ID", ""),
-			SSLMode:           getEnv("DB_AZURE_SSL_MODE", "require"),
-			SSLRootCert:       getEnv("DB_AZURE_SSL_ROOT_CERT", ""),
+			ServerName:         getEnv("DB_AZURE_SERVER_NAME", ""),
+			ResourceID:         getEnv("DB_AZURE_RESOURCE_ID", ""),
+			TenantID:           getEnv("DB_AZURE_TENANT_ID", ""),
+			SSLMode:            getEnv("DB_AZURE_SSL_MODE", "require"),
+			SSLRootCert:        getEnv("DB_AZURE_SSL_ROOT_CERT", ""),
 		}
 
 		// Parse Azure-specific timeouts

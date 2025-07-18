@@ -24,15 +24,15 @@ type ServiceBusConsumer struct {
 
 // ServiceBusConsumerOptions contains configuration for ServiceBus consumer
 type ServiceBusConsumerOptions struct {
-	Namespace         string
-	ConnectionString  string
+	Namespace          string
+	ConnectionString   string
 	UseManagedIdentity bool
-	TopicName         string
-	SubscriptionName  string
-	MaxRetries        int
-	WorkerCount       int
-	Handler           func(ctx context.Context, payload []byte) error
-	Publisher         MessagePublisher
+	TopicName          string
+	SubscriptionName   string
+	MaxRetries         int
+	WorkerCount        int
+	Handler            func(ctx context.Context, payload []byte) error
+	Publisher          MessagePublisher
 }
 
 // NewServiceBusConsumer creates a new Azure Service Bus consumer
@@ -46,7 +46,7 @@ func NewServiceBusConsumer(opts ServiceBusConsumerOptions) (*ServiceBusConsumer,
 		if err != nil {
 			return nil, fmt.Errorf("failed to create managed identity credential: %w", err)
 		}
-		
+
 		fullyQualifiedNamespace := fmt.Sprintf("%s.servicebus.windows.net", opts.Namespace)
 		client, err = azservicebus.NewClient(fullyQualifiedNamespace, credential, nil)
 		if err != nil {
@@ -101,7 +101,7 @@ func (c *ServiceBusConsumer) worker(ctx context.Context) {
 		default:
 			// Receive messages with timeout
 			messages, err := c.receiver.ReceiveMessages(ctx, 1, nil)
-			
+
 			if err != nil {
 				log.Printf("❌ Error receiving messages: %v", err)
 				continue
@@ -136,8 +136,8 @@ func (c *ServiceBusConsumer) processMessage(ctx context.Context, message *azserv
 		reason := "MaxRetriesExceeded"
 		description := fmt.Sprintf("Message failed after %d retries", retryCount)
 		if err := c.receiver.DeadLetterMessage(ctx, message, &azservicebus.DeadLetterOptions{
-			Reason:              &reason,
-			ErrorDescription:    &description,
+			Reason:           &reason,
+			ErrorDescription: &description,
 		}); err != nil {
 			log.Printf("⚠️ Failed to dead letter message: %v", err)
 		}
@@ -166,7 +166,7 @@ func (c *ServiceBusConsumer) requeueWithDelay(ctx context.Context, message *azse
 
 	// Create new message with retry count
 	newMessage := &azservicebus.Message{
-		Body: message.Body,
+		Body:                  message.Body,
 		ApplicationProperties: make(map[string]interface{}),
 	}
 

@@ -395,7 +395,7 @@ func (s *ServiceBusConnectivityTest) TestReceiver(t *testing.T) {
 	defer client.Close(context.Background())
 
 	queueName := "test-connectivity-queue"
-	
+
 	// Create sender to send test message
 	sender, err := client.NewSender(queueName, nil)
 	if err != nil {
@@ -467,7 +467,7 @@ func RunAllConnectivityTests(t *testing.T) {
 		if os.Getenv("MESSAGING_TYPE") != "rabbitmq" {
 			t.Skip("MESSAGING_TYPE is not rabbitmq, skipping RabbitMQ tests")
 		}
-		
+
 		rbTest := NewRabbitMQConnectivityTest()
 		t.Run("Connection", rbTest.TestConnection)
 		t.Run("Channel", rbTest.TestChannel)
@@ -478,7 +478,7 @@ func RunAllConnectivityTests(t *testing.T) {
 		if os.Getenv("MESSAGING_TYPE") != "servicebus" {
 			t.Skip("MESSAGING_TYPE is not servicebus, skipping Service Bus tests")
 		}
-		
+
 		sbTest := NewServiceBusConnectivityTest()
 		t.Run("Connection", sbTest.TestConnection)
 		t.Run("Sender", sbTest.TestSender)
@@ -489,14 +489,14 @@ func RunAllConnectivityTests(t *testing.T) {
 // TestMain runs connectivity tests
 func TestMain(m *testing.M) {
 	log.Println("Running connectivity tests...")
-	
+
 	// Set up test environment
 	os.Setenv("DB_NAME", "subsnotifpro_test")
-	
+
 	// Run tests
 	code := m.Run()
-	
+
 	// Clean up if needed
-	
+
 	os.Exit(code)
 }

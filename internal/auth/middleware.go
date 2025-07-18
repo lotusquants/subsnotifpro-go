@@ -83,8 +83,8 @@ func (m *AuthMiddleware) RequireRole(role string) gin.HandlerFunc {
 
 		if !m.authService.HasRole(userClaims, role) {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error":   "forbidden",
-				"message": "insufficient permissions",
+				"error":         "forbidden",
+				"message":       "insufficient permissions",
 				"required_role": role,
 			})
 			c.Abort()
@@ -120,8 +120,8 @@ func (m *AuthMiddleware) RequireAnyRole(roles []string) gin.HandlerFunc {
 
 		if !m.authService.HasAnyRole(userClaims, roles) {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error":   "forbidden",
-				"message": "insufficient permissions",
+				"error":          "forbidden",
+				"message":        "insufficient permissions",
 				"required_roles": roles,
 			})
 			c.Abort()

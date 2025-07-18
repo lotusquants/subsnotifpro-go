@@ -22,7 +22,7 @@ type RouteDependencies struct {
 	DashboardHandler                    *unifiedSubscriptionHandler.DashboardHandler
 	UnifiedSubscriptionsHandler         *unifiedSubscriptionHandler.UnifiedSubscriptionsHandler
 	HealthChecker                       *health.HealthChecker
-	
+
 	// Authentication components
 	AuthHandler    *auth.AuthHandler
 	AuthMiddleware *auth.AuthMiddleware

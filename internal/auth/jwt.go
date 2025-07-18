@@ -82,7 +82,7 @@ func (s *AuthService) CheckPassword(password, hash string) bool {
 // GenerateToken generates a JWT token for a user
 func (s *AuthService) GenerateToken(user User) (string, error) {
 	expiresAt := time.Now().Add(s.tokenDuration)
-	
+
 	claims := UserClaims{
 		UserID:   user.ID,
 		Email:    user.Email,

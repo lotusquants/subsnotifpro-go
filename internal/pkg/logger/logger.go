@@ -99,12 +99,12 @@ func (l *enhancedLogger) WithFields(fields ...Field) Logger {
 // WithContext returns a new logger with context
 func (l *enhancedLogger) WithContext(ctx context.Context) Logger {
 	entry := l.entry.WithContext(ctx)
-	
+
 	// Add request ID if available
 	if requestID := GetRequestIDFromContext(ctx); requestID != "" {
 		entry = entry.WithField("request_id", requestID)
 	}
-	
+
 	return &enhancedLogger{
 		logger: l.logger,
 		entry:  entry,

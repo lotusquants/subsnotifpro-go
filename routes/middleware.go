@@ -18,9 +18,9 @@ func SetupSecurityMiddleware(r *gin.Engine) {
 		"https://yourdomain.com",
 		"https://*.yourdomain.com",
 	}
-	
+
 	securityMiddleware := middleware.NewSecurityMiddleware(securityConfig)
-	
+
 	// Apply security middleware to all routes
 	r.Use(func(c *gin.Context) {
 		securityMiddleware.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +33,7 @@ func SetupSecurityMiddleware(r *gin.Engine) {
 			c.Next()
 		})).ServeHTTP(c.Writer, c.Request)
 	})
-	
+
 	// Input validation middleware
 	validator := middleware.NewInputValidator(10 * 1024 * 1024) // 10MB limit
 	r.Use(func(c *gin.Context) {
@@ -67,7 +67,7 @@ func JWTMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 		}
 
 		tokenString := parts[1]
-		
+
 		// Validate the token
 		claims, err := authService.ValidateToken(tokenString)
 		if err != nil {
@@ -89,10 +89,10 @@ func JWTMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 // RateLimitMiddleware provides rate limiting
 func RateLimitMiddleware() gin.HandlerFunc {
 	limiter := middleware.NewRateLimiter(middleware.DefaultSecurityConfig())
-	
+
 	return func(c *gin.Context) {
 		clientIP := middleware.GetClientIP(c.Request)
-		
+
 		if !limiter.Allow(clientIP) {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error": "Rate limit exceeded",
@@ -100,7 +100,7 @@ func RateLimitMiddleware() gin.HandlerFunc {
 			})
 			return
 		}
-		
+
 		c.Next()
 	}
 }
@@ -112,7 +112,7 @@ func RequestIDMiddleware() gin.HandlerFunc {
 		if requestID == "" {
 			requestID = generateRequestID()
 		}
-		
+
 		c.Header("X-Request-ID", requestID)
 		c.Set("requestID", requestID)
 		c.Next()

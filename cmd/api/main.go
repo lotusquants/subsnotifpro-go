@@ -78,7 +78,7 @@ func main() {
 	}
 	defer database.CloseDatabase(db)
 
-	database.AutoMigrateTables(db, cfg)       // Auto-migrate tables
+	database.AutoMigrateTables(db, cfg)  // Auto-migrate tables
 	migrations.ApplyCompositeIndexes(db) // Apply the composite indexes
 	// Create materialized views
 	migrations.CreateMaterializedViews(db)
@@ -241,7 +241,7 @@ func main() {
 	log.Println("✅ Server startup complete - All systems operational")
 	log.Println("====================================================")
 	log.Printf("🔗 HTTP server listening on :%s", cfg.ServerPort)
-	
+
 	// Log messaging backend info
 	switch cfg.MessagingType {
 	case config.MessagingTypeRabbitMQ:
@@ -253,7 +253,7 @@ func main() {
 	default:
 		log.Printf("📦 Unknown messaging type: %s", cfg.MessagingType)
 	}
-	
+
 	log.Println("====================================================")
 
 	// ✅ Handle OS signals for graceful shutdown

@@ -222,13 +222,13 @@ func (v *InputValidator) isValidID(value string) bool {
 	if len(value) == 0 || len(value) > 255 {
 		return false
 	}
-	
+
 	// Allow alphanumeric, hyphens, and underscores
 	for _, char := range value {
-		if !((char >= 'a' && char <= 'z') || 
-			 (char >= 'A' && char <= 'Z') || 
-			 (char >= '0' && char <= '9') || 
-			 char == '-' || char == '_') {
+		if !((char >= 'a' && char <= 'z') ||
+			(char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') ||
+			char == '-' || char == '_') {
 			return false
 		}
 	}
@@ -240,7 +240,7 @@ func (v *InputValidator) isValidNumber(value string, min, max int) bool {
 	if len(value) == 0 {
 		return false
 	}
-	
+
 	num := 0
 	for _, char := range value {
 		if char < '0' || char > '9' {
@@ -260,7 +260,7 @@ func (v *InputValidator) writeValidationError(w http.ResponseWriter, statusCode 
 	w.WriteHeader(statusCode)
 
 	var response ValidationResponse
-	
+
 	if valErr, ok := err.(*ValidationError); ok {
 		response = ValidationResponse{
 			ErrorType: "validation_failed",

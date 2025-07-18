@@ -90,14 +90,14 @@ func (h *RTDNHandler) WebhookHandler(c *gin.Context) {
 func (h *RTDNHandler) parseRTDN(rawBody []byte) (*dto.GooglePlayWebhookEvent, error) {
 	// Google Cloud Pub/Sub can send either wrapped or unwrapped messages
 	// depending on the push subscription configuration
-	
+
 	// Try Pub/Sub wrapped format first (most common)
 	var pubsub struct {
 		Message struct {
-			Data         string            `json:"data"`
-			Attributes   map[string]string `json:"attributes,omitempty"`
-			MessageId    string            `json:"messageId,omitempty"`
-			PublishTime  string            `json:"publishTime,omitempty"`
+			Data        string            `json:"data"`
+			Attributes  map[string]string `json:"attributes,omitempty"`
+			MessageId   string            `json:"messageId,omitempty"`
+			PublishTime string            `json:"publishTime,omitempty"`
 		} `json:"message"`
 		Subscription string `json:"subscription,omitempty"`
 	}

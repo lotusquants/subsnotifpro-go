@@ -13,17 +13,17 @@ import (
 
 // ServiceBusPublisher implements MessagePublisher for Azure Service Bus
 type ServiceBusPublisher struct {
-	client   *azservicebus.Client
-	sender   *azservicebus.Sender
+	client    *azservicebus.Client
+	sender    *azservicebus.Sender
 	topicName string
 }
 
 // ServiceBusPublisherOptions contains configuration for ServiceBus publisher
 type ServiceBusPublisherOptions struct {
-	Namespace         string
-	ConnectionString  string
+	Namespace          string
+	ConnectionString   string
 	UseManagedIdentity bool
-	TopicName         string
+	TopicName          string
 }
 
 // NewServiceBusPublisher creates a new Azure Service Bus publisher
@@ -37,7 +37,7 @@ func NewServiceBusPublisher(opts ServiceBusPublisherOptions) (*ServiceBusPublish
 		if err != nil {
 			return nil, fmt.Errorf("failed to create managed identity credential: %w", err)
 		}
-		
+
 		fullyQualifiedNamespace := fmt.Sprintf("%s.servicebus.windows.net", opts.Namespace)
 		client, err = azservicebus.NewClient(fullyQualifiedNamespace, credential, nil)
 		if err != nil {
@@ -58,8 +58,8 @@ func NewServiceBusPublisher(opts ServiceBusPublisherOptions) (*ServiceBusPublish
 	}
 
 	return &ServiceBusPublisher{
-		client:   client,
-		sender:   sender,
+		client:    client,
+		sender:    sender,
 		topicName: opts.TopicName,
 	}, nil
 }
