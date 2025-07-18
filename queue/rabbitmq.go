@@ -225,6 +225,12 @@ func (rm *RabbitMQManager) Close() {
 	}
 }
 
+func (rm *RabbitMQManager) GetConnection() *amqp.Connection {
+	rm.mutex.RLock()
+	defer rm.mutex.RUnlock()
+	return rm.conn
+}
+
 func isChannelClosed(ch *amqp.Channel) bool {
 	if ch == nil {
 		return true

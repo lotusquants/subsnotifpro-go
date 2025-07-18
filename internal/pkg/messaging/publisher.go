@@ -27,6 +27,7 @@ type MessagePublisher interface {
 	PublishToQueue(ctx context.Context, queueName string, event interface{}) error
 	PublishToExchange(ctx context.Context, exchange, routingKey string, event interface{}) error
 	PublishWithDelay(ctx context.Context, exchange, routingKey string, event interface{}, delay time.Duration) error
+	Close() error
 }
 
 type RabbitMQPublisher struct {
@@ -172,5 +173,12 @@ func (p *RabbitMQPublisher) publish(
 	}
 
 	log.Printf("Published to exchange %s with routing key %s", exchange, routingKey)
+	return nil
+}
+
+// Close closes the publisher (RabbitMQ publisher doesn't need explicit cleanup)
+func (p *RabbitMQPublisher) Close() error {
+	// RabbitMQ publisher doesn't need explicit cleanup
+	// The channel is managed by the caller
 	return nil
 }

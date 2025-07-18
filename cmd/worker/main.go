@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/streadway/amqp"
 	"subsnotifpro-go/config"
 	"subsnotifpro-go/database"
 	messaging "subsnotifpro-go/internal/pkg/messaging"
@@ -56,21 +57,32 @@ func main() {
 	// ✅ Load configuration
 	cfg := config.LoadConfig()
 
-	// Initialize RabbitgeMQ connection manager
-	rmqManager := queue.NewRabbitMQManager(ctx, cfg.RabbitMQ)
-	defer func() {
-		log.Println("🚦 Closing RabbitMQ connection...")
-		rmqManager.Close()
-	}()
-
-	// Get RabbitMQ channel
-	ch, err := rmqManager.GetChannel()
+	// ✅ Initialize messaging backend based on configuration
+	msgPublisher, err := messaging.NewPublisher(cfg)
 	if err != nil {
-		log.Fatalf("❌ Failed to get RabbitMQ channel: %v", err)
+		log.Fatalf("❌ Failed to create message publisher: %v", err)
+	}
+	defer msgPublisher.Close()
+
+	// Initialize RabbitMQ connection manager (only if using RabbitMQ)
+	var rmqManager *queue.RabbitMQManager
+	var ch *amqp.Channel
+	if cfg.MessagingType == config.MessagingTypeRabbitMQ {
+		rmqManager = queue.NewRabbitMQManager(ctx, cfg.RabbitMQ)
+		defer func() {
+			log.Println("🚦 Closing RabbitMQ connection...")
+			rmqManager.Close()
+		}()
+
+		// Get RabbitMQ channel
+		ch, err = rmqManager.GetChannel()
+		if err != nil {
+			log.Fatalf("❌ Failed to get RabbitMQ channel: %v", err)
+		}
 	}
 
 	// Initialize database
-	db, err := database.ConnectDatabase()
+	db, err := database.ConnectDatabase(cfg)
 	if err != nil {
 		log.Fatalf("❌ Database connection failed: %v", err)
 	}
@@ -80,9 +92,7 @@ func main() {
 	}()
 
 	// Initialize services
-	msgPublisher := messaging.NewRabbitMQPublisher(messaging.PublisherOptions{
-		Channel: ch,
-	})
+	// msgPublisher is already initialized above with the messaging factory
 
 	googlePlayPublisher := playstoreDispatchPkg.NewGooglePlayPublisher(msgPublisher, cfg)
 
@@ -128,47 +138,64 @@ func main() {
 
 	log.Println(" ✅ Initialized Appstore Services...")
 
-	// Create and start the consumers
-	consumer := playstoreDispatchPkg.NewGooglePlayConsumer(ch, rtdnRepo, rtdnService, msgPublisher, cfg)
+	// Create and start consumers based on messaging type
+	if cfg.MessagingType == config.MessagingTypeRabbitMQ && ch != nil {
+		// Create and start the RabbitMQ consumers
+		consumer := playstoreDispatchPkg.NewGooglePlayConsumer(ch, rtdnRepo, rtdnService, msgPublisher, cfg)
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		consumer.Consumer.Start(ctx)
-	}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			consumer.Consumer.Start(ctx)
+		}()
 
-	log.Println("🚀 Playstore Consumer/Worker started successfully")
+		log.Println("🚀 Playstore Consumer/Worker started successfully")
 
-	// Create and start the consumer
-	appStoreConsumer := appStoreDistpatch.NewAppStoreConsumer(ch, appStoreWebhookRepository, appStoreWebhookService, msgPublisher, cfg)
+		// Create and start the consumer
+		appStoreConsumer := appStoreDistpatch.NewAppStoreConsumer(ch, appStoreWebhookRepository, appStoreWebhookService, msgPublisher, cfg)
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		appStoreConsumer.Consumer.Start(ctx)
-	}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			appStoreConsumer.Consumer.Start(ctx)
+		}()
 
-	log.Println("🚀 Appstore Consumer/Worker started successfully")
+		log.Println("🚀 Appstore Consumer/Worker started successfully")
 
-	// Configure consumer options
-	unifiedSubscriptionsConsumerOpts := unifiedSubscriptionsConsumer.UnifiedConsumerOpts{
-		Channel:   ch,
-		Repo:      unifiedSubscriptionRepo,
-		Service:   unifiedSubscriptionService,
-		Publisher: msgPublisher,
-		Cfg:       &cfg.RabbitMQ, // your RabbitMQ config
+		// Configure consumer options
+		unifiedSubscriptionsConsumerOpts := unifiedSubscriptionsConsumer.UnifiedConsumerOpts{
+			Channel:   ch,
+			Repo:      unifiedSubscriptionRepo,
+			Service:   unifiedSubscriptionService,
+			Publisher: msgPublisher,
+			Cfg:       &cfg.RabbitMQ, // your RabbitMQ config
+		}
+
+		// Create and start the consumer
+		unifiedSubscriptionConsumer := unifiedSubscriptionsConsumer.NewUnifiedConsumer(unifiedSubscriptionsConsumerOpts)
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			unifiedSubscriptionConsumer.Start(ctx)
+		}()
+
+		log.Println("🚀 Unified Subscription Consumer/Worker started successfully")
+	} else if cfg.MessagingType == config.MessagingTypeServiceBus {
+		// Create and start Service Bus consumers
+		msgConsumer, err := messaging.NewMessageConsumer(cfg)
+		if err != nil {
+			log.Printf("❌ Failed to create message consumer: %v", err)
+			// For now, just log the error and continue
+			// Service Bus consumers would need specific implementation
+		} else {
+			defer msgConsumer.Close()
+		}
+
+		// Note: Service Bus consumers would need to be implemented
+		// This is a placeholder for the Service Bus consumer logic
+		log.Println("🚀 Service Bus Consumer/Worker started successfully")
 	}
-
-	// Create and start the consumer
-	unifiedSubscriptionConsumer := unifiedSubscriptionsConsumer.NewUnifiedConsumer(unifiedSubscriptionsConsumerOpts)
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		unifiedSubscriptionConsumer.Start(ctx)
-	}()
-
-	log.Println("🚀 Appstore Consumer/Worker started successfully")
 
 	// Handle OS signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)

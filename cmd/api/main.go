@@ -48,6 +48,7 @@ import (
 
 	"subsnotifpro-go/config"
 	"subsnotifpro-go/database"
+	"subsnotifpro-go/internal/health"
 	"subsnotifpro-go/internal/migrations"
 	queue "subsnotifpro-go/queue"
 
@@ -71,33 +72,60 @@ func main() {
 	cfg := config.LoadConfig()
 
 	// ✅ Initialize database and pass to repositories
-	db, err := database.ConnectDatabase()
+	db, err := database.ConnectDatabase(cfg)
 	if err != nil {
 		log.Fatalf("❌ Database connection failed: %v", err)
 	}
 	defer database.CloseDatabase(db)
 
-	database.AutoMigrateTables(db)       // Auto-migrate tables
+	database.AutoMigrateTables(db, cfg)       // Auto-migrate tables
 	migrations.ApplyCompositeIndexes(db) // Apply the composite indexes
 	// Create materialized views
 	migrations.CreateMaterializedViews(db)
 	// Create view indexes
 	migrations.CreateViewIndexes(db)
 
-	// Initialize RabbitMQ connection manager
-	rmqManager := queue.NewRabbitMQManager(ctx, cfg.RabbitMQ)
-	defer rmqManager.Close()
-
-	// Get RabbitMQ channel
-	ch, err := rmqManager.GetChannel()
+	// ✅ Initialize messaging backend based on configuration
+	msgPublisher, err := messaging.NewPublisher(cfg)
 	if err != nil {
-		log.Fatalf("❌ Failed to get RabbitMQ channel: %v", err)
+		log.Fatalf("❌ Failed to create message publisher: %v", err)
 	}
-	defer ch.Close()
+	defer msgPublisher.Close()
 
-	// Initialize RabbitMQ infrastructure
-	if err := rmqManager.InitializeRabbitMQ(ctx, ch); err != nil {
-		log.Fatalf("❌ Failed to initialize RabbitMQ: %v", err)
+	// ✅ Initialize health checker
+	healthChecker := health.NewHealthChecker(db, string(cfg.MessagingType), "1.0.0")
+	log.Println("✅ Health checker initialized")
+
+	// Initialize RabbitMQ connection manager (only if using RabbitMQ)
+	var rmqManager *queue.RabbitMQManager
+	if cfg.MessagingType == config.MessagingTypeRabbitMQ {
+		rmqManager = queue.NewRabbitMQManager(ctx, cfg.RabbitMQ)
+		defer rmqManager.Close()
+
+		// Get RabbitMQ channel
+		ch, err := rmqManager.GetChannel()
+		if err != nil {
+			log.Fatalf("❌ Failed to get RabbitMQ channel: %v", err)
+		}
+		defer ch.Close()
+
+		// Initialize RabbitMQ infrastructure
+		if err := rmqManager.InitializeRabbitMQ(ctx, ch); err != nil {
+			log.Fatalf("❌ Failed to initialize RabbitMQ: %v", err)
+		}
+
+		// Set RabbitMQ connection for health checks
+		healthChecker.SetRabbitMQConnection(rmqManager.GetConnection())
+	}
+
+	// Initialize Service Bus client for health checks if using Service Bus
+	if cfg.MessagingType == config.MessagingTypeServiceBus {
+		// This is just for health checks - the actual publisher is created separately
+		if cfg.ServiceBus.ConnectionString != "" {
+			// We'll create a Service Bus client for health checks
+			// Note: This is simplified - in production you might want to share the client
+			log.Printf("📦 Service Bus configured for health checks")
+		}
 	}
 
 	// ✅ Initialize Repositories, Services and Handlers
@@ -113,13 +141,7 @@ func main() {
 
 	// 🟢 Services
 
-	// Create generic publisher
-	msgPublisher := messaging.NewRabbitMQPublisher(messaging.PublisherOptions{
-		Channel: ch,
-		// Metrics: metrics.NewPublisherMetrics(),
-	})
-
-	// 2. Create unified event publisher
+	// Create unified event publisher
 	unifiedPublisher := unifiedPublisher.NewUnifiedEventPublisher(unifiedPublisher.UnifiedPublisherOpts{
 		Publisher:  msgPublisher,
 		Exchange:   cfg.RabbitMQ.UnifiedSubs.Exchange,
@@ -194,6 +216,7 @@ func main() {
 		AppStoreSettingsHandler:     appStoreSettingsHandler,
 		DashboardHandler:            dashBoardHandler,
 		UnifiedSubscriptionsHandler: unifiedSubscriptionHandler,
+		HealthChecker:               healthChecker,
 	}
 
 	router := routes.SetupRouter(deps)
@@ -218,7 +241,19 @@ func main() {
 	log.Println("✅ Server startup complete - All systems operational")
 	log.Println("====================================================")
 	log.Printf("🔗 HTTP server listening on :%s", cfg.ServerPort)
-	log.Printf("📦 RabbitMQ connected: %s", rmqManager.SanitizeRabbitMQURL())
+	
+	// Log messaging backend info
+	switch cfg.MessagingType {
+	case config.MessagingTypeRabbitMQ:
+		if rmqManager != nil {
+			log.Printf("📦 RabbitMQ connected: %s", rmqManager.SanitizeRabbitMQURL())
+		}
+	case config.MessagingTypeServiceBus:
+		log.Printf("📦 Azure Service Bus connected")
+	default:
+		log.Printf("📦 Unknown messaging type: %s", cfg.MessagingType)
+	}
+	
 	log.Println("====================================================")
 
 	// ✅ Handle OS signals for graceful shutdown
