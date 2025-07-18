@@ -31,14 +31,14 @@ func (s *rtdnService) ProcessWebhookEvent(ctx context.Context, payload models.Go
 		return nil
 	}
 
-	metrics.EventProcessingTime.WithLabelValues(payload.Event.PackageName).Observe(time.Since(startTime).Seconds())
+	metrics.RecordEventProcessingTime(payload.Event.PackageName, "playstore", time.Since(startTime))
 
 	if err != nil {
-		metrics.FailedEvents.WithLabelValues(payload.Event.PackageName).Inc()
+		metrics.RecordEventFailed(payload.Event.PackageName, "playstore", "processing_error")
 		return err
 	}
 
-	metrics.ProcessedEvents.WithLabelValues(payload.Event.PackageName).Inc()
+	metrics.RecordEventProcessed(payload.Event.PackageName, "playstore", "success")
 	return nil
 }
 

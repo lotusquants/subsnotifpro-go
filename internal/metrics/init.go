@@ -1,12 +1,10 @@
-// internal/google_playstore/metrics/init.go
+// Package metrics initialization
 package metrics
 
-import "github.com/prometheus/client_golang/prometheus"
-
-// **Initialize Prometheus Metrics**
+// Init initializes the metrics registry
+// This function is deprecated - metrics are now automatically registered
+// when the global Registry is created in init()
 func Init() {
-	prometheus.MustRegister(ProcessedEvents)
-	prometheus.MustRegister(FailedEvents)
-	prometheus.MustRegister(DLQSize)
-	prometheus.MustRegister(EventProcessingTime)
+	// Metrics are now automatically registered in the global init() function
+	// This function is kept for backwards compatibility
 }

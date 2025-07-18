@@ -2,6 +2,7 @@
 package logger
 
 import (
+	"context"
 	"os"
 
 	"github.com/sirupsen/logrus"
@@ -16,299 +17,123 @@ func init() {
 	Log.SetLevel(logrus.InfoLevel)            // ✅ Default level: INFO
 }
 
-// // internal/logger/logger.go
-// package logger
+// Enhanced logger with structured logging capabilities and context support
+type Logger interface {
+	Debug(msg string, fields ...Field)
+	Info(msg string, fields ...Field)
+	Warn(msg string, fields ...Field)
+	Error(msg string, fields ...Field)
+	Fatal(msg string, fields ...Field)
+	WithFields(fields ...Field) Logger
+	WithContext(ctx context.Context) Logger
+}
 
-// import (
-// 	"context"
-// 	"io"
-// 	"os"
-// 	"runtime"
-// 	"strings"
+// Field represents a structured logging field
+type Field struct {
+	Key   string
+	Value interface{}
+}
 
-// 	"github.com/sirupsen/logrus"
-// )
+// F is a convenience function to create a Field
+func F(key string, value interface{}) Field {
+	return Field{Key: key, Value: value}
+}
 
-// // Logger interface defines the contract for our logger
-// type Logger interface {
-// 	Debug(ctx context.Context, args ...interface{})
-// 	Debugf(ctx context.Context, format string, args ...interface{})
-// 	Info(ctx context.Context, args ...interface{})
-// 	Infof(ctx context.Context, format string, args ...interface{})
-// 	Warn(ctx context.Context, args ...interface{})
-// 	Warnf(ctx context.Context, format string, args ...interface{})
-// 	Error(ctx context.Context, args ...interface{})
-// 	Errorf(ctx context.Context, format string, args ...interface{})
-// 	Fatal(ctx context.Context, args ...interface{})
-// 	Fatalf(ctx context.Context, format string, args ...interface{})
-// 	Panic(ctx context.Context, args ...interface{})
-// 	Panicf(ctx context.Context, format string, args ...interface{})
+// enhancedLogger implements the Logger interface with context support
+type enhancedLogger struct {
+	logger *logrus.Logger
+	entry  *logrus.Entry
+}
 
-// 	WithFields(ctx context.Context, fields Fields) Logger
-// 	SetLevel(level Level)
-// 	GetLevel() Level
-// }
+// NewEnhancedLogger creates a new enhanced logger with best practices
+func NewEnhancedLogger() Logger {
+	l := logrus.New()
+	l.SetFormatter(&logrus.JSONFormatter{
+		TimestampFormat: "2006-01-02T15:04:05.999Z07:00",
+		FieldMap: logrus.FieldMap{
+			logrus.FieldKeyTime:  "timestamp",
+			logrus.FieldKeyLevel: "severity",
+			logrus.FieldKeyMsg:   "message",
+		},
+	})
+	l.SetOutput(os.Stdout)
+	l.SetLevel(logrus.InfoLevel)
+	l.SetReportCaller(true)
 
-// // Fields type for structured logging
-// type Fields map[string]interface{}
+	return &enhancedLogger{logger: l, entry: l.WithFields(logrus.Fields{})}
+}
 
-// // Level represents log level
-// type Level uint32
+// Debug logs a debug message with optional fields
+func (l *enhancedLogger) Debug(msg string, fields ...Field) {
+	l.entry.WithFields(l.convertFields(fields)).Debug(msg)
+}
 
-// const (
-// 	PanicLevel Level = iota
-// 	FatalLevel
-// 	ErrorLevel
-// 	WarnLevel
-// 	InfoLevel
-// 	DebugLevel
-// 	TraceLevel
-// )
+// Info logs an info message with optional fields
+func (l *enhancedLogger) Info(msg string, fields ...Field) {
+	l.entry.WithFields(l.convertFields(fields)).Info(msg)
+}
 
-// // logrusLogger wraps logrus.Logger and implements Logger interface
-// type logrusLogger struct {
-// 	logger *logrus.Logger
-// }
+// Warn logs a warning message with optional fields
+func (l *enhancedLogger) Warn(msg string, fields ...Field) {
+	l.entry.WithFields(l.convertFields(fields)).Warn(msg)
+}
 
-// // New creates a new logger instance
-// func New(options ...Option) Logger {
-// 	// Default configuration
-// 	l := logrus.New()
-// 	l.SetFormatter(&logrus.JSONFormatter{
-// 		TimestampFormat: "2006-01-02T15:04:05.999Z07:00",
-// 		FieldMap: logrus.FieldMap{
-// 			logrus.FieldKeyTime:  "timestamp",
-// 			logrus.FieldKeyLevel: "severity",
-// 			logrus.FieldKeyMsg:   "message",
-// 		},
-// 	})
-// 	l.SetOutput(os.Stdout)
-// 	l.SetLevel(logrus.InfoLevel)
+// Error logs an error message with optional fields
+func (l *enhancedLogger) Error(msg string, fields ...Field) {
+	l.entry.WithFields(l.convertFields(fields)).Error(msg)
+}
 
-// 	// Apply options
-// 	logger := &logrusLogger{logger: l}
-// 	for _, opt := range options {
-// 		opt(logger)
-// 	}
+// Fatal logs a fatal message with optional fields and exits
+func (l *enhancedLogger) Fatal(msg string, fields ...Field) {
+	l.entry.WithFields(l.convertFields(fields)).Fatal(msg)
+}
 
-// 	return logger
-// }
+// WithFields returns a new logger with the provided fields
+func (l *enhancedLogger) WithFields(fields ...Field) Logger {
+	return &enhancedLogger{
+		logger: l.logger,
+		entry:  l.entry.WithFields(l.convertFields(fields)),
+	}
+}
 
-// // Option configures the logger
-// type Option func(*logrusLogger)
+// WithContext returns a new logger with context
+func (l *enhancedLogger) WithContext(ctx context.Context) Logger {
+	entry := l.entry.WithContext(ctx)
+	
+	// Add request ID if available
+	if requestID := GetRequestIDFromContext(ctx); requestID != "" {
+		entry = entry.WithField("request_id", requestID)
+	}
+	
+	return &enhancedLogger{
+		logger: l.logger,
+		entry:  entry,
+	}
+}
 
-// // WithOutput sets the output destination
-// func WithOutput(w io.Writer) Option {
-// 	return func(l *logrusLogger) {
-// 		l.logger.SetOutput(w)
-// 	}
-// }
+// convertFields converts Field slice to logrus.Fields
+func (l *enhancedLogger) convertFields(fields []Field) logrus.Fields {
+	logrusFields := make(logrus.Fields, len(fields))
+	for _, field := range fields {
+		logrusFields[field.Key] = field.Value
+	}
+	return logrusFields
+}
 
-// // WithLevel sets the log level
-// func WithLevel(level Level) Option {
-// 	return func(l *logrusLogger) {
-// 		l.logger.SetLevel(logrus.Level(level))
-// 	}
-// }
+// Context utility functions
+type contextKey string
 
-// // WithFormatter sets the formatter
-// func WithFormatter(formatter logrus.Formatter) Option {
-// 	return func(l *logrusLogger) {
-// 		l.logger.SetFormatter(formatter)
-// 	}
-// }
+const requestIDKey contextKey = "request_id"
 
-// // WithCaller enables caller information in logs
-// func WithCaller(enabled bool) Option {
-// 	return func(l *logrusLogger) {
-// 		if enabled {
-// 			l.logger.SetReportCaller(true)
-// 		}
-// 	}
-// }
+// GetRequestIDFromContext extracts request ID from context
+func GetRequestIDFromContext(ctx context.Context) string {
+	if id, ok := ctx.Value(requestIDKey).(string); ok {
+		return id
+	}
+	return ""
+}
 
-// // Implementation of Logger interface methods
-// func (l *logrusLogger) Debug(ctx context.Context, args ...interface{}) {
-// 	l.logger.WithContext(ctx).WithFields(l.getFields(ctx)).Debug(args...)
-// }
-
-// func (l *logrusLogger) Debugf(ctx context.Context, format string, args ...interface{}) {
-// 	l.logger.WithContext(ctx).WithFields(l.getFields(ctx)).Debugf(format, args...)
-// }
-
-// func (l *logrusLogger) Info(ctx context.Context, args ...interface{}) {
-// 	l.logger.WithContext(ctx).WithFields(l.getFields(ctx)).Info(args...)
-// }
-
-// func (l *logrusLogger) Infof(ctx context.Context, format string, args ...interface{}) {
-// 	l.logger.WithContext(ctx).WithFields(l.getFields(ctx)).Infof(format, args...)
-// }
-
-// func (l *logrusLogger) Warn(ctx context.Context, args ...interface{}) {
-// 	l.logger.WithContext(ctx).WithFields(l.getFields(ctx)).Warn(args...)
-// }
-
-// func (l *logrusLogger) Warnf(ctx context.Context, format string, args ...interface{}) {
-// 	l.logger.WithContext(ctx).WithFields(l.getFields(ctx)).Warnf(format, args...)
-// }
-
-// func (l *logrusLogger) Error(ctx context.Context, args ...interface{}) {
-// 	l.logger.WithContext(ctx).WithFields(l.getFields(ctx)).Error(args...)
-// }
-
-// func (l *logrusLogger) Errorf(ctx context.Context, format string, args ...interface{}) {
-// 	l.logger.WithContext(ctx).WithFields(l.getFields(ctx)).Errorf(format, args...)
-// }
-
-// func (l *logrusLogger) Fatal(ctx context.Context, args ...interface{}) {
-// 	l.logger.WithContext(ctx).WithFields(l.getFields(ctx)).Fatal(args...)
-// }
-
-// func (l *logrusLogger) Fatalf(ctx context.Context, format string, args ...interface{}) {
-// 	l.logger.WithContext(ctx).WithFields(l.getFields(ctx)).Fatalf(format, args...)
-// }
-
-// func (l *logrusLogger) Panic(ctx context.Context, args ...interface{}) {
-// 	l.logger.WithContext(ctx).WithFields(l.getFields(ctx)).Panic(args...)
-// }
-
-// func (l *logrusLogger) Panicf(ctx context.Context, format string, args ...interface{}) {
-// 	l.logger.WithContext(ctx).WithFields(l.getFields(ctx)).Panicf(format, args...)
-// }
-
-// func (l *logrusLogger) WithFields(ctx context.Context, fields Fields) Logger {
-// 	return &logrusEntry{
-// 		entry: l.logger.WithContext(ctx).WithFields(logrus.Fields(fields)),
-// 	}
-// }
-
-// func (l *logrusLogger) SetLevel(level Level) {
-// 	l.logger.SetLevel(logrus.Level(level))
-// }
-
-// func (l *logrusLogger) GetLevel() Level {
-// 	return Level(l.logger.GetLevel())
-// }
-
-// // getFields extracts common fields from context
-// func (l *logrusLogger) getFields(ctx context.Context) logrus.Fields {
-// 	fields := logrus.Fields{}
-
-// 	// Add request ID if available
-// 	if requestID := GetRequestID(ctx); requestID != "" {
-// 		fields["request_id"] = requestID
-// 	}
-
-// 	// Add caller information if enabled
-// 	if l.logger.ReportCaller {
-// 		if pc, file, line, ok := runtime.Caller(2); ok {
-// 			funcName := runtime.FuncForPC(pc).Name()
-// 			fields["caller"] = strings.TrimPrefix(file, os.Getenv("GOPATH")+"/src/")
-// 			fields["line"] = line
-// 			fields["func"] = funcName
-// 		}
-// 	}
-
-// 	return fields
-// }
-
-// // logrusEntry wraps logrus.Entry and implements Logger interface
-// type logrusEntry struct {
-// 	entry *logrus.Entry
-// }
-
-// // Debug implements Logger.
-// func (l *logrusEntry) Debug(ctx context.Context, args ...interface{}) {
-// 	panic("unimplemented")
-// }
-
-// // Debugf implements Logger.
-// func (l *logrusEntry) Debugf(ctx context.Context, format string, args ...interface{}) {
-// 	panic("unimplemented")
-// }
-
-// // Error implements Logger.
-// func (l *logrusEntry) Error(ctx context.Context, args ...interface{}) {
-// 	panic("unimplemented")
-// }
-
-// // Errorf implements Logger.
-// func (l *logrusEntry) Errorf(ctx context.Context, format string, args ...interface{}) {
-// 	panic("unimplemented")
-// }
-
-// // Fatal implements Logger.
-// func (l *logrusEntry) Fatal(ctx context.Context, args ...interface{}) {
-// 	panic("unimplemented")
-// }
-
-// // Fatalf implements Logger.
-// func (l *logrusEntry) Fatalf(ctx context.Context, format string, args ...interface{}) {
-// 	panic("unimplemented")
-// }
-
-// // GetLevel implements Logger.
-// func (l *logrusEntry) GetLevel() Level {
-// 	panic("unimplemented")
-// }
-
-// // Info implements Logger.
-// func (l *logrusEntry) Info(ctx context.Context, args ...interface{}) {
-// 	panic("unimplemented")
-// }
-
-// // Infof implements Logger.
-// func (l *logrusEntry) Infof(ctx context.Context, format string, args ...interface{}) {
-// 	panic("unimplemented")
-// }
-
-// // Panic implements Logger.
-// func (l *logrusEntry) Panic(ctx context.Context, args ...interface{}) {
-// 	panic("unimplemented")
-// }
-
-// // Panicf implements Logger.
-// func (l *logrusEntry) Panicf(ctx context.Context, format string, args ...interface{}) {
-// 	panic("unimplemented")
-// }
-
-// // SetLevel implements Logger.
-// func (l *logrusEntry) SetLevel(level Level) {
-// 	panic("unimplemented")
-// }
-
-// // Warn implements Logger.
-// func (l *logrusEntry) Warn(ctx context.Context, args ...interface{}) {
-// 	panic("unimplemented")
-// }
-
-// // Warnf implements Logger.
-// func (l *logrusEntry) Warnf(ctx context.Context, format string, args ...interface{}) {
-// 	panic("unimplemented")
-// }
-
-// // WithFields implements Logger.
-// func (l *logrusEntry) WithFields(ctx context.Context, fields Fields) Logger {
-// 	panic("unimplemented")
-// }
-
-// // Implement Logger interface methods for logrusEntry...
-// // (similar to logrusLogger methods but using entry instead of logger)
-
-// // Context keys
-// type contextKey string
-
-// const requestIDKey contextKey = "request_id"
-
-// // GetRequestID gets request ID from context
-// func GetRequestID(ctx context.Context) string {
-// 	if id, ok := ctx.Value(requestIDKey).(string); ok {
-// 		return id
-// 	}
-// 	return ""
-// }
-
-// // WithRequestID adds request ID to context
-// func WithRequestID(ctx context.Context, requestID string) context.Context {
-// 	return context.WithValue(ctx, requestIDKey, requestID)
-// }
+// WithRequestID adds request ID to context
+func WithRequestID(ctx context.Context, requestID string) context.Context {
+	return context.WithValue(ctx, requestIDKey, requestID)
+}

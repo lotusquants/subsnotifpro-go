@@ -37,14 +37,16 @@ type RabbitMQPublisher struct {
 
 type PublisherOptions struct {
 	Channel *amqp.Channel
-	// Metrics PublisherMetrics
+	// Metrics for monitoring publisher performance
+	Metrics PublisherMetrics
 }
 
-// type PublisherMetrics interface {
-// 	IncPublishSuccess(exchange, routingKey string)
-// 	IncPublishFailure(exchange, routingKey string)
-// 	ObservePublishLatency(exchange string, duration time.Duration)
-// }
+// PublisherMetrics interface for monitoring publisher operations
+type PublisherMetrics interface {
+	IncPublishSuccess(exchange, routingKey string)
+	IncPublishFailure(exchange, routingKey string)
+	ObservePublishLatency(exchange string, duration time.Duration)
+}
 
 func NewRabbitMQPublisher(opts PublisherOptions) *RabbitMQPublisher {
 	return &RabbitMQPublisher{

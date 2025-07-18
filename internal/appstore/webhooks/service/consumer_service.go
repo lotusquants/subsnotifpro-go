@@ -39,13 +39,13 @@ func (s *appStoreNotificationsService) ProcessAppStoreEvent(ctx context.Context,
 		bundleID = notificationDTO.ResponseBodyV2DecodedPayload.Data.BundleID
 	}
 
-	metrics.EventProcessingTime.WithLabelValues(bundleID).Observe(time.Since(startTime).Seconds())
+	metrics.RecordEventProcessingTime(bundleID, "appstore", time.Since(startTime))
 	if processErr != nil {
-		metrics.FailedEvents.WithLabelValues(bundleID).Inc()
+		metrics.RecordEventFailed(bundleID, "appstore", "processing_error")
 		return processErr
 	}
 
-	metrics.ProcessedEvents.WithLabelValues(bundleID).Inc()
+	metrics.RecordEventProcessed(bundleID, "appstore", "success")
 	return nil
 }
 
