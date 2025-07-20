@@ -510,6 +510,9 @@ golang.org/x/text/transform
 golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
 golang.org/x/text/width
+# golang.org/x/time v0.12.0
+## explicit; go 1.23.0
+golang.org/x/time/rate
 # google.golang.org/api v0.223.0
 ## explicit; go 1.23.0
 google.golang.org/api/androidpublisher/v3

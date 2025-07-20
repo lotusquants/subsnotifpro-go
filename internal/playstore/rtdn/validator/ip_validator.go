@@ -6,8 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"subsnotifpro-go/internal/pkg/logger"
+
+	"github.com/gin-gonic/gin"
 )
 
 // Google Cloud Pub/Sub IP ranges (these should be updated regularly)

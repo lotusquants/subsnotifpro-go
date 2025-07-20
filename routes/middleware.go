@@ -4,9 +4,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"subsnotifpro-go/internal/auth"
 	"subsnotifpro-go/internal/middleware"
+
+	"github.com/gin-gonic/gin"
 )
 
 // SetupSecurityMiddleware configures comprehensive security middleware

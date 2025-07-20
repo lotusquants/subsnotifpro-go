@@ -9,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/streadway/amqp"
 	"subsnotifpro-go/config"
 	"subsnotifpro-go/database"
 	messaging "subsnotifpro-go/internal/pkg/messaging"
@@ -22,6 +21,8 @@ import (
 	playstoreUserService "subsnotifpro-go/internal/playstore/user/service"
 	userRepo "subsnotifpro-go/internal/users/repository"
 	userService "subsnotifpro-go/internal/users/service"
+
+	"github.com/streadway/amqp"
 
 	playstoreCatalogRepo "subsnotifpro-go/internal/playstore/products/repository"
 	playstoreCatalogService "subsnotifpro-go/internal/playstore/products/service"

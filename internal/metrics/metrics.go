@@ -6,9 +6,10 @@ import (
 	"net/http"
 	"time"
 
+	"subsnotifpro-go/internal/pkg/logger"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"subsnotifpro-go/internal/pkg/logger"
 )
 
 // MetricsRegistry holds all application metrics
