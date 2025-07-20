@@ -1,0 +1,204 @@
+{
+  "rabbit_version": "3.12.0",
+  "rabbitmq_version": "3.12.0",
+  "product_name": "RabbitMQ",
+  "product_version": "3.12.0",
+  "users": [
+    {
+      "name": "admin",
+      "password_hash": "Kg5fzjgdgA+sWprjGZbZUZgDnJA=",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": "administrator"
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "admin",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "parameters": [],
+  "policies": [
+    {
+      "vhost": "/",
+      "name": "DLQ-Policy",
+      "pattern": ".*_dlq",
+      "apply-to": "queues",
+      "definition": {
+        "message-ttl": 864000000,
+        "max-length": 10000
+      },
+      "priority": 0
+    }
+  ],
+  "queues": [
+    {
+      "name": "rtdn_events",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "rtdn_dead_letter_exchange",
+        "x-dead-letter-routing-key": "rtdn.dlq.event",
+        "x-message-ttl": 3600000
+      }
+    },
+    {
+      "name": "rtdn_dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "appstore_events",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "appstore_dead_letter_exchange",
+        "x-dead-letter-routing-key": "appstore.dlq.event",
+        "x-message-ttl": 3600000
+      }
+    },
+    {
+      "name": "appstore_dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "unified_subscription_events",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "unified_subscription_dlx",
+        "x-dead-letter-routing-key": "subscription.dlq.update",
+        "x-message-ttl": 3600000
+      }
+    },
+    {
+      "name": "unified_subscription_dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "rtdn_exchange",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "rtdn_dead_letter_exchange",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "appstore_exchange",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "appstore_dead_letter_exchange",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "unified_subscription_exchange",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "unified_subscription_dlx",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "rtdn_exchange",
+      "vhost": "/",
+      "destination": "rtdn_events",
+      "destination_type": "queue",
+      "routing_key": "rtdn.event",
+      "arguments": {}
+    },
+    {
+      "source": "rtdn_dead_letter_exchange",
+      "vhost": "/",
+      "destination": "rtdn_dlq",
+      "destination_type": "queue",
+      "routing_key": "rtdn.dlq.event",
+      "arguments": {}
+    },
+    {
+      "source": "appstore_exchange",
+      "vhost": "/",
+      "destination": "appstore_events",
+      "destination_type": "queue",
+      "routing_key": "appstore.event",
+      "arguments": {}
+    },
+    {
+      "source": "appstore_dead_letter_exchange",
+      "vhost": "/",
+      "destination": "appstore_dlq",
+      "destination_type": "queue",
+      "routing_key": "appstore.dlq.event",
+      "arguments": {}
+    },
+    {
+      "source": "unified_subscription_exchange",
+      "vhost": "/",
+      "destination": "unified_subscription_events",
+      "destination_type": "queue",
+      "routing_key": "subscription.update",
+      "arguments": {}
+    },
+    {
+      "source": "unified_subscription_dlx",
+      "vhost": "/",
+      "destination": "unified_subscription_dlq",
+      "destination_type": "queue",
+      "routing_key": "subscription.dlq.update",
+      "arguments": {}
+    }
+  ]
+}

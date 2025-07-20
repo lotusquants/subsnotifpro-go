@@ -36,11 +36,20 @@ const (
 
 // NewRabbitMQManager creates a new RabbitMQ manager instance
 func NewRabbitMQManager(ctx context.Context, cfg config.RabbitMQConfig) *RabbitMQManager {
-	connString := fmt.Sprintf("amqp://%s:%s@%s:%s/",
+	// Construct connection string with vhost
+	vhost := strings.TrimPrefix(cfg.VHost, "/")
+	if vhost == "" {
+		vhost = "/"
+	} else {
+		vhost = "/" + vhost
+	}
+
+	connString := fmt.Sprintf("amqp://%s:%s@%s:%s%s",
 		cfg.Username,
 		cfg.Password,
 		cfg.Host,
 		cfg.Port,
+		vhost,
 	)
 
 	ctx, cancel := context.WithCancel(ctx)
