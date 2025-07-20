@@ -1,12 +1,10 @@
-// Package metrics provides comprehensive monitoring and observability for the application
 package metrics
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
-
-	"subsnotifpro-go/internal/pkg/logger"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -53,14 +51,35 @@ type MetricsRegistry struct {
 	RateLimitAllowed *prometheus.CounterVec
 }
 
-// NewMetricsRegistry creates and registers all metrics
+// NewMetricsRegistry creates a new metrics registry (backward compatibility)
 func NewMetricsRegistry() *MetricsRegistry {
+	return GetOrCreateRegistry()
+}
+
+// Global registry instance
+var Registry *MetricsRegistry
+var registryInitialized bool
+
+// GetOrCreateRegistry returns the global registry instance, creating it if it doesn't exist
+func GetOrCreateRegistry() *MetricsRegistry {
+	if Registry == nil {
+		Registry = NewMetricsRegistryInstance()
+	}
+	return Registry
+}
+
+// NewMetricsRegistryInstance creates a new metrics registry with safe registration
+func NewMetricsRegistryInstance() *MetricsRegistry {
+	if registryInitialized {
+		return Registry
+	}
+
 	registry := &MetricsRegistry{
 		// Event processing metrics
 		ProcessedEvents: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "subsnotifpro_events_processed_total",
-				Help: "Total number of events processed successfully",
+				Help: "Total number of processed events",
 			},
 			[]string{"event_type", "platform", "status"},
 		),
@@ -68,7 +87,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 		FailedEvents: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "subsnotifpro_events_failed_total",
-				Help: "Total number of events that failed processing",
+				Help: "Total number of failed events",
 			},
 			[]string{"event_type", "platform", "error_type"},
 		),
@@ -76,7 +95,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 		EventProcessingTime: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "subsnotifpro_event_processing_duration_seconds",
-				Help:    "Histogram of event processing duration in seconds",
+				Help:    "Time taken to process events",
 				Buckets: prometheus.DefBuckets,
 			},
 			[]string{"event_type", "platform"},
@@ -86,22 +105,22 @@ func NewMetricsRegistry() *MetricsRegistry {
 		DLQSize: prometheus.NewGauge(
 			prometheus.GaugeOpts{
 				Name: "subsnotifpro_dlq_size",
-				Help: "Current number of messages in the dead letter queue",
+				Help: "Current size of dead letter queue",
 			},
 		),
 
 		QueueSize: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "subsnotifpro_queue_size",
-				Help: "Current number of messages in queues",
+				Help: "Current size of message queues",
 			},
-			[]string{"queue_name", "type"},
+			[]string{"queue_name"},
 		),
 
 		QueueMessages: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "subsnotifpro_queue_messages_total",
-				Help: "Total number of messages processed from queues",
+				Help: "Total number of messages processed by queue",
 			},
 			[]string{"queue_name", "status"},
 		),
@@ -119,18 +138,18 @@ func NewMetricsRegistry() *MetricsRegistry {
 			prometheus.HistogramOpts{
 				Name:    "subsnotifpro_http_request_duration_seconds",
 				Help:    "HTTP request duration in seconds",
-				Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+				Buckets: prometheus.DefBuckets,
 			},
-			[]string{"method", "path", "status_code"},
+			[]string{"method", "path"},
 		),
 
 		HTTPResponseSize: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "subsnotifpro_http_response_size_bytes",
 				Help:    "HTTP response size in bytes",
-				Buckets: prometheus.ExponentialBuckets(100, 10, 7),
+				Buckets: prometheus.ExponentialBuckets(100, 10, 8),
 			},
-			[]string{"method", "path", "status_code"},
+			[]string{"method", "path"},
 		),
 
 		// Authentication metrics
@@ -145,8 +164,8 @@ func NewMetricsRegistry() *MetricsRegistry {
 		AuthenticationLatency: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "subsnotifpro_authentication_duration_seconds",
-				Help:    "Authentication request duration in seconds",
-				Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1},
+				Help:    "Authentication duration in seconds",
+				Buckets: prometheus.DefBuckets,
 			},
 			[]string{"method"},
 		),
@@ -157,7 +176,7 @@ func NewMetricsRegistry() *MetricsRegistry {
 				Name: "subsnotifpro_database_connections",
 				Help: "Current number of database connections",
 			},
-			[]string{"database", "status"},
+			[]string{"status"},
 		),
 
 		DatabaseQueries: prometheus.NewCounterVec(
@@ -165,16 +184,16 @@ func NewMetricsRegistry() *MetricsRegistry {
 				Name: "subsnotifpro_database_queries_total",
 				Help: "Total number of database queries",
 			},
-			[]string{"database", "operation", "status"},
+			[]string{"operation", "table", "status"},
 		),
 
 		DatabaseQueryLatency: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "subsnotifpro_database_query_duration_seconds",
 				Help:    "Database query duration in seconds",
-				Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
+				Buckets: prometheus.DefBuckets,
 			},
-			[]string{"database", "operation"},
+			[]string{"operation", "table"},
 		),
 
 		// Business metrics
@@ -183,15 +202,15 @@ func NewMetricsRegistry() *MetricsRegistry {
 				Name: "subsnotifpro_subscription_events_total",
 				Help: "Total number of subscription events",
 			},
-			[]string{"platform", "event_type", "product_id"},
+			[]string{"event_type", "platform", "product_id"},
 		),
 
 		Revenue: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "subsnotifpro_revenue_total",
-				Help: "Total revenue tracked",
+				Help: "Total revenue generated",
 			},
-			[]string{"platform", "currency", "product_id"},
+			[]string{"platform", "product_id", "currency"},
 		),
 
 		ActiveSubscriptions: prometheus.NewGaugeVec(
@@ -243,8 +262,18 @@ func NewMetricsRegistry() *MetricsRegistry {
 		),
 	}
 
-	// Register all metrics
-	prometheus.MustRegister(
+	// Only register metrics if not already registered
+	if !registryInitialized {
+		safeRegister(registry)
+		registryInitialized = true
+	}
+
+	return registry
+}
+
+// safeRegister registers metrics safely, avoiding duplicate registration
+func safeRegister(registry *MetricsRegistry) {
+	metrics := []prometheus.Collector{
 		registry.ProcessedEvents,
 		registry.FailedEvents,
 		registry.EventProcessingTime,
@@ -267,17 +296,21 @@ func NewMetricsRegistry() *MetricsRegistry {
 		registry.ProcessMemoryUsage,
 		registry.RateLimitHits,
 		registry.RateLimitAllowed,
-	)
+	}
 
-	return registry
+	for _, metric := range metrics {
+		if err := prometheus.Register(metric); err != nil {
+			if _, ok := err.(prometheus.AlreadyRegisteredError); !ok {
+				// Log error without logger dependency
+				fmt.Printf("Failed to register metric: %v\n", err)
+			}
+		}
+	}
 }
 
-// Global registry instance
-var Registry *MetricsRegistry
-
-// init initializes the global metrics registry
+// init initializes the global metrics registry safely
 func init() {
-	Registry = NewMetricsRegistry()
+	Registry = GetOrCreateRegistry()
 }
 
 // RecordEventProcessed records a successfully processed event
@@ -360,15 +393,13 @@ func SetSystemInfo(version, goVersion, platform string) {
 
 // MetricsServer provides HTTP server for metrics endpoint
 type MetricsServer struct {
-	port   string
-	logger logger.Logger
+	port string
 }
 
 // NewMetricsServer creates a new metrics server
-func NewMetricsServer(port string, logger logger.Logger) *MetricsServer {
+func NewMetricsServer(port string) *MetricsServer {
 	return &MetricsServer{
-		port:   port,
-		logger: logger,
+		port: port,
 	}
 }
 
@@ -388,11 +419,11 @@ func (s *MetricsServer) Start(ctx context.Context) error {
 		Handler: mux,
 	}
 
-	s.logger.Info("Starting metrics server", logger.F("port", s.port))
+	fmt.Printf("Starting metrics server on port %s\n", s.port)
 
 	go func() {
 		<-ctx.Done()
-		s.logger.Info("Shutting down metrics server")
+		fmt.Println("Shutting down metrics server")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		server.Shutdown(shutdownCtx)

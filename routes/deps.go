@@ -6,6 +6,7 @@ import (
 	"subsnotifpro-go/internal/auth"
 	"subsnotifpro-go/internal/health"
 	"subsnotifpro-go/internal/middleware"
+	"subsnotifpro-go/internal/observability"
 	playstoreApiHandler "subsnotifpro-go/internal/playstore/api/handler"
 	playstoreSubscriptionCatalogHandler "subsnotifpro-go/internal/playstore/products/handler"
 	playstoreRTDNHandler "subsnotifpro-go/internal/playstore/rtdn/handler"
@@ -31,4 +32,7 @@ type RouteDependencies struct {
 
 	// Enhanced middleware
 	EnhancedMiddleware *middleware.EnhancedMiddleware
+
+	// Observability middleware
+	ObservabilityMiddleware *observability.ObservabilityMiddleware
 }

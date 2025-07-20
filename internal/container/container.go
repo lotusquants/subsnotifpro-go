@@ -18,8 +18,11 @@ import (
 	appStoreWebhookService "subsnotifpro-go/internal/appstore/webhooks/service"
 	"subsnotifpro-go/internal/constants"
 	"subsnotifpro-go/internal/health"
+	"subsnotifpro-go/internal/metrics"
 	middlewarePackage "subsnotifpro-go/internal/middleware"
+	"subsnotifpro-go/internal/observability"
 	messaging "subsnotifpro-go/internal/pkg/messaging"
+	"subsnotifpro-go/internal/tracing"
 	playstoreApiHandler "subsnotifpro-go/internal/playstore/api/handler"
 	playstoreApiService "subsnotifpro-go/internal/playstore/api/service"
 	playstoreClientService "subsnotifpro-go/internal/playstore/client/service"
@@ -60,6 +63,11 @@ type Container struct {
 	DB        *gorm.DB
 	Logger    *logrus.Logger
 	Publisher messaging.MessagePublisher
+
+	// Observability
+	MetricsRegistry           *metrics.MetricsRegistry
+	TracerProvider           *tracing.TracerProvider
+	ObservabilityMiddleware  *observability.ObservabilityMiddleware
 
 	// Infrastructure services
 	HealthChecker *health.HealthChecker
@@ -206,7 +214,45 @@ func (c *Container) initializeInfrastructure() error {
 	// Set sync batch size
 	c.SyncBatchSize = getSyncBatchSize()
 
+	// Initialize observability components
+	if err := c.initializeObservability(); err != nil {
+		return fmt.Errorf("failed to initialize observability: %w", err)
+	}
+
 	log.Println("✅ Infrastructure initialized")
+	return nil
+}
+
+// initializeObservability sets up metrics and tracing
+func (c *Container) initializeObservability() error {
+	// Initialize metrics registry
+	c.MetricsRegistry = metrics.NewMetricsRegistry()
+	log.Println("✅ Metrics registry initialized")
+
+	// Initialize tracing
+	tracingConfig := tracing.TracingConfig{
+		ServiceName:    "subsnotifpro-go",
+		ServiceVersion: "1.0.0",
+		Environment:    getEnvironment(),
+		OTLPEndpoint:   getOTLPEndpoint(),
+		SampleRate:     getSampleRate(),
+		Enabled:        isTracingEnabled(),
+	}
+
+	tracerProvider, err := tracing.NewTracerProvider(tracingConfig)
+	if err != nil {
+		log.Printf("⚠️ Failed to initialize tracing: %v", err)
+		// Continue without tracing rather than failing
+		c.TracerProvider = nil
+	} else {
+		c.TracerProvider = tracerProvider
+		log.Println("✅ Tracing initialized")
+	}
+
+	// Initialize observability middleware
+	c.ObservabilityMiddleware = observability.NewObservabilityMiddleware(c.MetricsRegistry, c.TracerProvider)
+	log.Println("✅ Observability middleware initialized")
+
 	return nil
 }
 
@@ -436,6 +482,7 @@ func (c *Container) GetRouteDependencies() *routes.RouteDependencies {
 		UnifiedSubscriptionsHandler:         c.UnifiedHandlers.SubscriptionHandler,
 		HealthChecker:                       c.HealthChecker,
 		EnhancedMiddleware:                  c.createEnhancedMiddleware(),
+		ObservabilityMiddleware:             c.ObservabilityMiddleware,
 	}
 }
 
@@ -446,6 +493,17 @@ func (c *Container) Close() error {
 	// Cancel context to stop background operations
 	if c.cancel != nil {
 		c.cancel()
+	}
+
+	// Shutdown tracing
+	if c.TracerProvider != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := c.TracerProvider.Shutdown(shutdownCtx); err != nil {
+			log.Printf("❌ Error shutting down tracer: %v", err)
+		} else {
+			log.Println("✅ Tracer shutdown complete")
+		}
 	}
 
 	// Close messaging publisher
@@ -477,4 +535,35 @@ func getSyncBatchSize() int {
 		}
 	}
 	return constants.DEFAULT_SYNC_BATCH_SIZE
+}
+
+// Helper functions for observability configuration
+func getEnvironment() string {
+	if env := os.Getenv("ENVIRONMENT"); env != "" {
+		return env
+	}
+	return "development"
+}
+
+func getOTLPEndpoint() string {
+	if endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"); endpoint != "" {
+		return endpoint
+	}
+	return "http://localhost:4318" // Default OTLP HTTP endpoint (path is added automatically)
+}
+
+func getSampleRate() float64 {
+	if rate := os.Getenv("OTEL_TRACE_SAMPLE_RATE"); rate != "" {
+		if parsedRate, err := strconv.ParseFloat(rate, 64); err == nil {
+			return parsedRate
+		}
+	}
+	return 0.1 // Default 10% sampling
+}
+
+func isTracingEnabled() bool {
+	if enabled := os.Getenv("OTEL_TRACING_ENABLED"); enabled != "" {
+		return enabled == "true" || enabled == "1"
+	}
+	return true // Default enabled
 }

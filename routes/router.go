@@ -13,6 +13,12 @@ func SetupRouter(deps *RouteDependencies) *gin.Engine {
 	router.Use(gin.Logger())
 	router.Use(cors.Default())
 
+	// Observability middleware (metrics and tracing)
+	if deps.ObservabilityMiddleware != nil {
+		router.Use(deps.ObservabilityMiddleware.HTTPMiddleware())
+		router.Use(deps.ObservabilityMiddleware.CorrelationIDMiddleware())
+	}
+
 	// Health check endpoints
 	if deps.HealthChecker != nil {
 		router.GET("/health", gin.WrapH(deps.HealthChecker.HTTPHealthHandler()))
