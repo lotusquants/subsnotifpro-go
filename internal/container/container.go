@@ -18,6 +18,7 @@ import (
 	appStoreWebhookService "subsnotifpro-go/internal/appstore/webhooks/service"
 	"subsnotifpro-go/internal/constants"
 	"subsnotifpro-go/internal/health"
+	middlewarePackage "subsnotifpro-go/internal/middleware"
 	messaging "subsnotifpro-go/internal/pkg/messaging"
 	playstoreApiHandler "subsnotifpro-go/internal/playstore/api/handler"
 	playstoreApiService "subsnotifpro-go/internal/playstore/api/service"
@@ -105,6 +106,7 @@ type PlaystoreHandlers struct {
 	RTDNHandler                *playstoreRtdnHandler.RTDNHandler
 	SettingsHandler            *playstoreSettingsHandler.PlaystoreSettingsHandler
 	ApiHandler                 *playstoreApiHandler.PlaystoreApiHandler
+	EnhancedApiHandler         *playstoreApiHandler.EnhancedPlaystoreApiHandler
 	SubscriptionCatalogHandler *playstoreCatalogHandler.SubscriptionCatalogHandler
 }
 
@@ -359,6 +361,7 @@ func (c *Container) initializeHandlers() error {
 		RTDNHandler:                c.createPlaystoreRTDNHandler(),
 		SettingsHandler:            c.createPlaystoreSettingsHandler(),
 		ApiHandler:                 c.createPlaystoreApiHandler(),
+		EnhancedApiHandler:         c.createEnhancedPlaystoreApiHandler(),
 		SubscriptionCatalogHandler: c.createPlaystoreSubscriptionCatalogHandler(),
 	}
 
@@ -391,6 +394,14 @@ func (c *Container) createPlaystoreApiHandler() *playstoreApiHandler.PlaystoreAp
 	return playstoreApiHandler.NewPlaystoreClientHandler(c.PlaystoreApiService)
 }
 
+func (c *Container) createEnhancedPlaystoreApiHandler() *playstoreApiHandler.EnhancedPlaystoreApiHandler {
+	return playstoreApiHandler.NewEnhancedPlaystoreApiHandler(c.PlaystoreApiService)
+}
+
+func (c *Container) createEnhancedMiddleware() *middlewarePackage.EnhancedMiddleware {
+	return middlewarePackage.NewEnhancedMiddleware()
+}
+
 func (c *Container) createPlaystoreSubscriptionCatalogHandler() *playstoreCatalogHandler.SubscriptionCatalogHandler {
 	return playstoreCatalogHandler.NewSubscriptionCatalogHandler(c.PlaystoreSubscriptionCatalogService)
 }
@@ -417,12 +428,14 @@ func (c *Container) GetRouteDependencies() *routes.RouteDependencies {
 		PlaystoreRTDNHandler:                c.PlaystoreHandlers.RTDNHandler,
 		PlaystoreSettingsHandler:            c.PlaystoreHandlers.SettingsHandler,
 		PlaystoreApiHandler:                 c.PlaystoreHandlers.ApiHandler,
+		EnhancedPlaystoreApiHandler:         c.PlaystoreHandlers.EnhancedApiHandler,
 		PlaystoreSubscriptionCatalogHandler: c.PlaystoreHandlers.SubscriptionCatalogHandler,
 		AppStoreWebhookHandler:              c.AppStoreHandlers.WebhookHandler,
 		AppStoreSettingsHandler:             c.AppStoreHandlers.SettingsHandler,
 		DashboardHandler:                    c.UnifiedHandlers.DashboardHandler,
 		UnifiedSubscriptionsHandler:         c.UnifiedHandlers.SubscriptionHandler,
 		HealthChecker:                       c.HealthChecker,
+		EnhancedMiddleware:                  c.createEnhancedMiddleware(),
 	}
 }
 

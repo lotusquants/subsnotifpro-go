@@ -5,6 +5,7 @@ import (
 	appStoreWebhookHandler "subsnotifpro-go/internal/appstore/webhooks/handler"
 	"subsnotifpro-go/internal/auth"
 	"subsnotifpro-go/internal/health"
+	"subsnotifpro-go/internal/middleware"
 	playstoreApiHandler "subsnotifpro-go/internal/playstore/api/handler"
 	playstoreSubscriptionCatalogHandler "subsnotifpro-go/internal/playstore/products/handler"
 	playstoreRTDNHandler "subsnotifpro-go/internal/playstore/rtdn/handler"
@@ -16,6 +17,7 @@ type RouteDependencies struct {
 	PlaystoreRTDNHandler                *playstoreRTDNHandler.RTDNHandler
 	PlaystoreSettingsHandler            *playstoreSettingsHandler.PlaystoreSettingsHandler
 	PlaystoreApiHandler                 *playstoreApiHandler.PlaystoreApiHandler
+	EnhancedPlaystoreApiHandler         *playstoreApiHandler.EnhancedPlaystoreApiHandler
 	PlaystoreSubscriptionCatalogHandler *playstoreSubscriptionCatalogHandler.SubscriptionCatalogHandler
 	AppStoreWebhookHandler              *appStoreWebhookHandler.AppStoreNotificationsHandler
 	AppStoreSettingsHandler             *appStoreSettingsHandler.AppStoreSettingsHandler
@@ -26,4 +28,7 @@ type RouteDependencies struct {
 	// Authentication components
 	AuthHandler    *auth.AuthHandler
 	AuthMiddleware *auth.AuthMiddleware
+
+	// Enhanced middleware
+	EnhancedMiddleware *middleware.EnhancedMiddleware
 }

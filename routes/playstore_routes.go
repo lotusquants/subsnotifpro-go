@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -19,7 +21,23 @@ func registerGooglePlayRoutes(router *gin.Engine, deps *RouteDependencies) {
 	group.GET("/get-settings", deps.PlaystoreSettingsHandler.GetSettingsHandler)
 	group.DELETE("/delete-settings", deps.PlaystoreSettingsHandler.DeleteSettingsHandler)
 
-	// 🟢 Playstore Subscription Api
+	// 🔥 Enhanced Playstore Subscription Api (with new middleware stack)
+	enhancedGroup := router.Group("/api/google-play/enhanced")
+	if deps.EnhancedMiddleware != nil {
+		enhancedGroup.Use(deps.EnhancedMiddleware.RequestLogging())
+		enhancedGroup.Use(deps.EnhancedMiddleware.CorrelationID())
+		enhancedGroup.Use(deps.EnhancedMiddleware.RateLimit())
+		enhancedGroup.Use(deps.EnhancedMiddleware.CircuitBreakerSimple())
+		enhancedGroup.Use(deps.EnhancedMiddleware.Timeout(30 * time.Second))
+		enhancedGroup.Use(deps.EnhancedMiddleware.ErrorHandler())
+
+		enhancedGroup.GET("/fetch-user-subscription-purchase", deps.EnhancedPlaystoreApiHandler.GetUserSubscriptionPurchase)
+		enhancedGroup.GET("/fetch-list-subscription-products", deps.EnhancedPlaystoreApiHandler.ListSubscriptionProducts)
+		enhancedGroup.GET("/fetch-subscription-product-details", deps.EnhancedPlaystoreApiHandler.GetSubscriptionProduct)
+		enhancedGroup.GET("/health", deps.EnhancedPlaystoreApiHandler.HealthCheck)
+	}
+
+	// � Legacy Playstore Subscription Api (keeping for backwards compatibility)
 	group.GET("/fetch-user-subscription-purchase", deps.PlaystoreApiHandler.GetUserSubscriptionPurchase)
 	group.GET("/fetch-list-subscription-products", deps.PlaystoreApiHandler.ListSubscriptionProducts)
 	group.GET("/fetch-subscription-product-details", deps.PlaystoreApiHandler.GetSubscriptionProductDetails)
