@@ -16,6 +16,7 @@ import (
 	appStoreUserService "subsnotifpro-go/internal/appstore/user/service"
 	appStoreWebhookHandler "subsnotifpro-go/internal/appstore/webhooks/handler"
 	appStoreWebhookService "subsnotifpro-go/internal/appstore/webhooks/service"
+	"subsnotifpro-go/internal/circuitbreaker"
 	"subsnotifpro-go/internal/constants"
 	"subsnotifpro-go/internal/health"
 	"subsnotifpro-go/internal/metrics"
@@ -70,9 +71,10 @@ type Container struct {
 	ObservabilityMiddleware  *observability.ObservabilityMiddleware
 
 	// Infrastructure services
-	HealthChecker *health.HealthChecker
-	RMQManager    *queue.RabbitMQManager
-	SyncBatchSize int
+	HealthChecker      *health.HealthChecker
+	CircuitBreakerManager *circuitbreaker.Manager
+	RMQManager         *queue.RabbitMQManager
+	SyncBatchSize      int
 
 	// Domain services - Playstore
 	PlaystoreClientService              playstoreClientService.PlaystoreClientService
@@ -165,15 +167,26 @@ func NewContainer(cfg *config.Config) (*Container, error) {
 
 // initializeInfrastructure sets up core infrastructure dependencies
 func (c *Container) initializeInfrastructure() error {
+	// Initialize circuit breaker manager first (for resilience)
+	cbConfigs := circuitbreaker.LoadConfigFromEnv()
+	c.CircuitBreakerManager = circuitbreaker.NewManager(cbConfigs)
+	log.Println("✅ Circuit breaker manager initialized")
+
 	// Initialize logger
 	c.Logger = logrus.New()
 	c.Logger.SetLevel(logrus.InfoLevel)
 	c.Logger.SetFormatter(&logrus.JSONFormatter{})
 
-	// Initialize database
-	db, err := database.ConnectDatabase(c.Config)
+	// Initialize database with circuit breaker protection
+	dbResult, err := c.CircuitBreakerManager.ExecuteDatabaseOperation(c.ctx, func() (interface{}, error) {
+		return database.ConnectDatabase(c.Config)
+	})
 	if err != nil {
 		return fmt.Errorf("database connection failed: %w", err)
+	}
+	db, ok := dbResult.(*gorm.DB)
+	if !ok {
+		return fmt.Errorf("invalid database connection type")
 	}
 	c.DB = db
 
@@ -206,7 +219,7 @@ func (c *Container) initializeInfrastructure() error {
 	}
 
 	// Initialize health checker
-	c.HealthChecker = health.NewHealthChecker(db, string(c.Config.MessagingType), "1.0.0")
+	c.HealthChecker = health.NewHealthChecker(c.DB, string(c.Config.MessagingType), "1.0.0")
 	if c.RMQManager != nil {
 		c.HealthChecker.SetRabbitMQConnection(c.RMQManager.GetConnection())
 	}
@@ -482,6 +495,7 @@ func (c *Container) GetRouteDependencies() *routes.RouteDependencies {
 		UnifiedSubscriptionsHandler:         c.UnifiedHandlers.SubscriptionHandler,
 		HealthChecker:                       c.HealthChecker,
 		EnhancedMiddleware:                  c.createEnhancedMiddleware(),
+		CircuitBreakerManager:               c.CircuitBreakerManager,
 		ObservabilityMiddleware:             c.ObservabilityMiddleware,
 	}
 }

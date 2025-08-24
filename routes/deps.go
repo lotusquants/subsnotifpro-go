@@ -4,6 +4,7 @@ import (
 	appStoreSettingsHandler "subsnotifpro-go/internal/appstore/settings/handler"
 	appStoreWebhookHandler "subsnotifpro-go/internal/appstore/webhooks/handler"
 	"subsnotifpro-go/internal/auth"
+	"subsnotifpro-go/internal/circuitbreaker"
 	"subsnotifpro-go/internal/health"
 	"subsnotifpro-go/internal/middleware"
 	"subsnotifpro-go/internal/observability"
@@ -31,7 +32,8 @@ type RouteDependencies struct {
 	AuthMiddleware *auth.AuthMiddleware
 
 	// Enhanced middleware
-	EnhancedMiddleware *middleware.EnhancedMiddleware
+	EnhancedMiddleware      *middleware.EnhancedMiddleware
+	CircuitBreakerManager  *circuitbreaker.Manager
 
 	// Observability middleware
 	ObservabilityMiddleware *observability.ObservabilityMiddleware
