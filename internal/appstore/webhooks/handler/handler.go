@@ -5,6 +5,7 @@ import (
 	"subsnotifpro-go/internal/appstore/webhooks/converter"
 	"subsnotifpro-go/internal/appstore/webhooks/dto"
 	"subsnotifpro-go/internal/appstore/webhooks/service"
+	"subsnotifpro-go/internal/playstore/rtdn/validator"
 
 	"subsnotifpro-go/internal/pkg/logger"
 
@@ -29,7 +30,14 @@ func (h *AppStoreNotificationsHandler) NotificationHandler(c *gin.Context) {
 	logger.Log.Info("📩 Received App Store notification")
 	defer c.Request.Body.Close()
 
-	// 1. Validate request
+	// 1. Validate Apple App Store request (IP whitelisting)
+	if err := validator.ValidateAppleAppStoreRequest(c); err != nil {
+		logger.Log.WithError(err).Error("Apple App Store request validation failed")
+		c.JSON(http.StatusForbidden, gin.H{"error": "Invalid request source"})
+		return
+	}
+
+	// 2. Validate request format
 	if !h.validateRequest(c) {
 		return
 	}
@@ -51,14 +59,18 @@ func (h *AppStoreNotificationsHandler) NotificationHandler(c *gin.Context) {
 		return
 	}
 
-	// 3. Process notification
+	// 4. Set idempotency context for middleware
+	c.Set("eventID", notification.ResponseBodyV2DecodedPayload.NotificationUUID)
+	c.Set("eventType", "app_store_notification")
+
+	// 5. Process notification
 	if err := h.service.ProcessNotificationForPublish(c.Request.Context(), notification); err != nil {
 		logger.Log.Errorf("Failed to process notification: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process notification"})
 		return
 	}
 
-	// 4. Respond successfully
+	// 6. Respond successfully
 	c.JSON(http.StatusAccepted, gin.H{"status": "OK"})
 }
 

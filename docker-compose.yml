@@ -1,0 +1,172 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database (only when DB_DEPLOYMENT_MODE=container)
+  postgres:
+    image: postgres:15-alpine
+    container_name: subsnotifpro-postgres
+    environment:
+      POSTGRES_DB: subsnotifpro_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - subsnotifpro-network
+    restart: unless-stopped
+    profiles:
+      - postgres
+      - database
+
+  # RabbitMQ Message Broker (only when MESSAGING_TYPE=rabbitmq)
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: subsnotifpro-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+      RABBITMQ_DEFAULT_VHOST: /
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json
+    networks:
+      - subsnotifpro-network
+    restart: unless-stopped
+    profiles:
+      - rabbitmq
+
+  # Redis Cache (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: subsnotifpro-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - subsnotifpro-network
+    restart: unless-stopped
+    profiles:
+      - cache
+
+  # Prometheus (for metrics)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: subsnotifpro-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - subsnotifpro-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana (for dashboards)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: subsnotifpro-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - subsnotifpro-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Your Application (API Server)
+  subsnotifpro-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: subsnotifpro-api
+    environment:
+      - ENV=production
+      - MESSAGING_TYPE=rabbitmq
+      - DB_TYPE=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=subsnotifpro_db
+      - DB_SSLMODE=disable
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=admin
+      - RABBITMQ_PASSWORD=admin123
+      - RABBITMQ_VHOST=/
+      - SERVER_PORT=8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - rabbitmq
+    networks:
+      - subsnotifpro-network
+    restart: unless-stopped
+    profiles:
+      - app
+
+  # Your Application (Worker Service)
+  subsnotifpro-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: subsnotifpro-worker
+    environment:
+      - ENV=production
+      - MESSAGING_TYPE=rabbitmq
+      - DB_TYPE=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=subsnotifpro_db
+      - DB_SSLMODE=disable
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=admin
+      - RABBITMQ_PASSWORD=admin123
+      - RABBITMQ_VHOST=/
+    depends_on:
+      - postgres
+      - rabbitmq
+      - subsnotifpro-api
+    networks:
+      - subsnotifpro-network
+    restart: unless-stopped
+    profiles:
+      - app
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  subsnotifpro-network:
+    driver: bridge

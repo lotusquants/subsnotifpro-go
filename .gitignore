@@ -9,3 +9,11 @@ node_modules/
 bin/
 no-git/
 secrets/
+# Compiled binaries (only in root directory)
+/api
+/worker
+/main
+/current-api
+/legacy-api
+/api-current
+/api-legacy

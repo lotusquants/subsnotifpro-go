@@ -1,4 +1,3 @@
-// internal/appstore/dispatch/publisher.go
 package dispatch
 
 import (
